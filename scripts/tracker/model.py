@@ -24,8 +24,10 @@ HOME = Path(os.environ.get("TRACKER_HOME", Path.home() / ".claude" / "trackers")
 PACKAGE = Path(__file__).resolve().parent
 ROOT = PACKAGE.parent.parent  # the plugin: bin/, scripts/, templates/, viewer/
 BIN = ROOT / "bin" / "tracker"  # the CLI
+# This Python, as scripts/python.sh says to start it: no module in the cwd replaces a stdlib one; UTF-8 mode
+PYTHON = [sys.executable, "-I", "-X", "utf8"]
 # The CLI on this Python, as bin/tracker starts it: Windows starts no shell script as a process
-CLI = [sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv.pop(1)); from tracker.cli import main; main()",
+CLI = [*PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv.pop(1)); from tracker.cli import main; main()",
        str(PACKAGE.parent)]
 WINDOWS = os.name == "nt"
 
@@ -130,6 +132,7 @@ def put_entry(entries: dict, repo: str, branch: str, value) -> None:
         entries.pop(state_key(repo, branch), None)
     else:
         entries[state_key(repo, branch)] = value
+
 
 README_TOKEN_BUDGET = 2000
 MERGED_CARRY_FORWARD_MAX = 5

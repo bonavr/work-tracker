@@ -147,12 +147,7 @@ def named_or_own(args) -> tuple[Tracker, Record]:
 
 
 def cmd_set(args):
-    if args.id and args.id.lower() in ("readme", "tracker"):  # the work itself: status, owner, repo, title, labels
-        tr = resolve(args)
-        rec = load_record(tr.root / "README.md", "tracker")
-        rec.meta["id"] = "README"
-    else:
-        tr, rec = named_or_own(args)
+    tr, rec = record_for(args, args.id) if args.id else named_or_own(args)
     schema = KEYS[rec.kind]
     updates = {}
     for pair in args.pairs:
@@ -721,6 +716,16 @@ def tracker_matches(words: list[str]) -> tuple[list[Tracker], bool]:
                                         False)
 
 
+def one_tracker(hits: list[Tracker], sure: bool, head: str, cmd: str) -> Tracker:
+    """The one tracker a name matched for sure; else `head`, the options and exit 3, so the model asks the user."""
+    if len(hits) == 1 and sure:
+        return hits[0]
+    options = hits or all_trackers() or die(NO_TRACKERS)
+    print("\n".join([head, *(f"  {t.slug} — {t.headline()}" for t in options),
+                     f"Pass the slug: `tracker {cmd} <slug>`"]))
+    sys.exit(3)
+
+
 def cmd_start(args):
     """Tie a tracker to this Claude session: its commands and hooks then use it; `--on` puts the session on some of
     its tickets alone. With no name: the tracker that holds the `--on` tickets, else the tracker with an open ticket
@@ -742,7 +747,7 @@ def cmd_start(args):
         print(brief(match_cwd(cwd, sid), cwd, with_protocol=False))
         return
     if focus and not args.name:
-        hits, sure = [locate(args, focus[0])[0]], True
+        hits, sure, head = [locate(args, focus[0])[0]], True, ""
     elif args.name:
         hits, sure = tracker_matches(args.name)
         head = f"'{' '.join(args.name)}' " + ("matches more than one tracker" if len(hits) > 1 and sure
@@ -753,14 +758,7 @@ def cmd_start(args):
         hits, sure = [m.tracker for m in found], True
         head = (f"branch '{found[0].branch}' has open tickets in more than one tracker:" if found else
                 f"branch '{branch_of(cwd) or '?'}' is on no open ticket in any tracker; trackers:")
-    if len(hits) != 1 or not sure:
-        options = hits or all_trackers() or die(NO_TRACKERS)
-        print(head)
-        for t in options:
-            print(f"  {t.slug} — {t.headline()}")
-        print("Pass the slug: `tracker start <slug>`")
-        sys.exit(3)
-    tr = hits[0]
+    tr = one_tracker(hits, sure, head, "start")
     picks = [tr.find(i) for i in focus]
     closed = [f"{r.id} is {r.stage if r.kind == 'ticket' else 'a decision'}" for r in picks
               if r.kind != "ticket" or r.stage in CLOSED_TICKET]
@@ -792,14 +790,8 @@ def cmd_watch(args):
     else:
         found = find_tracker(args)
         hits, sure, head = ([found], True, "") if found else ([], False, "which tracker? trackers:")
-    if len(hits) != 1 or not sure:
-        options = hits or all_trackers() or die(NO_TRACKERS)
-        print(head)
-        for t in options:
-            print(f"  {t.slug} — {t.headline()}")
-        print("Pass the slug: `tracker watch <slug>`")
-        sys.exit(3)
-    Watcher(hits[0], sid if inside else "", f"session {claude_name(sid)}" if inside else "terminal").run(args.once)
+    tr = one_tracker(hits, sure, head, "watch")
+    Watcher(tr, sid if inside else "", f"session {claude_name(sid)}" if inside else "terminal").run(args.once)
 
 
 def cmd_use(args):

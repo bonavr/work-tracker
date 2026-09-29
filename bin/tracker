@@ -3,5 +3,5 @@
 # bytecode.
 scripts="$(dirname "$0")/../scripts"
 . "$scripts/python.sh"
-exec "$python" -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from tracker.cli import main; main()' \
+exec "$python" -I -X utf8 -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from tracker.cli import main; main()' \
   "$scripts" "$@"

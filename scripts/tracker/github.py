@@ -160,7 +160,7 @@ def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) ->
         started = t.get("status") in ("in-progress", "done")
         if not started or t.get("pr_state") == "merged" or not repo or not (t.get("branch") or t.get("pr")):
             continue
-        prs = prs_by_repo[repo] if repo in prs_by_repo else []
+        prs = prs_by_repo.get(repo, [])
         pr = pick_pr(prs, t)
         # The list holds only the newest PRs; ask for an older one on its own.
         if not pr and len(prs) >= GH_LIST_LIMIT and lookups < GH_LOOKUPS_MAX:

@@ -17,7 +17,7 @@ def pr_label(t: Record) -> str:
     if not pr:
         return "—"
     state = t.get("pr_state")
-    return f"#{pr}" + (f" {state}" if state and state not in ("merged",) else "")
+    return f"#{pr}" + (f" {state}" if state and state != "merged" else "")
 
 
 def index_lines(tr: Tracker, stages: set[str] | None = None, group: str | None = None,

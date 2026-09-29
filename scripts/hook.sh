@@ -73,6 +73,6 @@ case $event in
 esac
 # Only the hooks' modules load (not the CLI or the viewer); Python reuses their compiled bytecode.
 . "${0%/*}/python.sh"
-printf '%s' "$input" | "$python" -c \
+printf '%s' "$input" | "$python" -I -X utf8 -c \
   'import sys; sys.path.insert(0, sys.argv.pop(1)); from tracker.hooks import run_hook; run_hook(sys.argv[1])' \
   "${0%/*}" "$event"

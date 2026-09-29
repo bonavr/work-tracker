@@ -14,9 +14,9 @@ import threading
 import time
 
 from .markdown import headings, section_block, without_section, Link
-from .model import (CLI, CLOSED_TICKET, EVIDENCE_DIR, HOME, IN_FLIGHT, LIST_KEYS, PACKAGE, README_SECTIONS, ROOT,
-    STAGES, WINDOWS, all_trackers, atomic_write, branch_entry, files_hash, sequence, sort_key, spawn, whose_move, Dep,
-    Move, Record, Tracker)
+from .model import (CLI, CLOSED_TICKET, EVIDENCE_DIR, HOME, IN_FLIGHT, LIST_KEYS, PACKAGE, PYTHON, README_SECTIONS,
+    ROOT, STAGES, WINDOWS, all_trackers, atomic_write, branch_entry, files_hash, sequence, sort_key, spawn, whose_move,
+    Dep, Move, Record, Tracker)
 from .session import ago, live_sessions, match_cwd, Live
 from .contract import check
 from .views import pr_label, stage_counts, start_text
@@ -30,9 +30,10 @@ def md_inline(s: str) -> str:
     s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
     s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"(?<![*\w])\*([^*\s][^*]*)\*(?!\w)", r"<em>\1</em>", s)
-    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", lambda m: link_html(m[2], m[1]), s)
-    s = re.sub(r"(?<![\"'>=])(https?://[^\s<)\"']+)", lambda m: link_html(m[1], m[1]), s)
-    return s
+    # One pass for both forms: a bare URL inside a link's URL must not become a second link, whose quotes would end
+    # the first one's href and open its tag to new attributes.
+    return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)|(?<![\"'>=])(https?://[^\s<)\"']+)",
+                  lambda m: link_html(m[2], m[1]) if m[1] else link_html(m[3], m[3]), s)
 
 
 SAFE_HREF = re.compile(rf"(?:https?://|mailto:|#|{EVIDENCE_DIR}/)", re.I)
@@ -482,7 +483,7 @@ def code_ready() -> bool:
         return False
     check = f"import sys; sys.path.insert(0, {str(PACKAGE.parent)!r}); import tracker.cli, tracker.viewer"
     try:
-        ok = subprocess.run([sys.executable, "-c", check], capture_output=True, timeout=30).returncode == 0
+        ok = subprocess.run([*PYTHON, "-c", check], capture_output=True, timeout=30).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         ok = False
     if not ok:
@@ -497,8 +498,9 @@ def serve(port: int = 0) -> None:
         def do_GET(self):
             server.last_seen = time.monotonic()
             port = server.server_address[1]
-            if self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}"):
-                return self.reply(403, "forbidden", "text/plain")  # DNS-rebinding guard
+            if (self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}")
+                    or self.headers.get("Sec-Fetch-Site") == "cross-site"):
+                return self.reply(403, "forbidden", "text/plain")  # DNS rebinding; a request another site's page sends
             parts = [p for p in self.path.split("?")[0].split("#")[0].split("/") if p]
             if parts == ["ping"]:
                 return self.reply(200, CODE_ID, "text/plain")
@@ -559,6 +561,8 @@ def serve(port: int = 0) -> None:
             self.send_header("Content-Type", f"{ctype}; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            # Only app.js runs: no inline script or handler, if tracker text ever gets past md_inline's escaping.
+            self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'")
             self.end_headers()
             self.wfile.write(data)
 

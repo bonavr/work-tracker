@@ -539,8 +539,8 @@ def own_edit(sid: str, m: Match, ident: str) -> None:
 # ---------------------------------------------------------------- live sessions
 # Claude Code keeps one file per running `claude` process: <config dir>/sessions/<pid>.json, with its pid, sessionId,
 # cwd, name, status ("busy" while the model works, "idle" while it waits for the user) and when the status last
-# changed (statusUpdatedAt, epoch ms). It is not a documented
-# format: a file that does not read as one counts as no session, and the viewer then shows none.
+# changed (statusUpdatedAt, epoch ms). It is not a documented format: a file that does not read as one counts as no
+# session, and the viewer then shows none.
 
 CLAUDE_SESSIONS = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser() / "sessions"
 

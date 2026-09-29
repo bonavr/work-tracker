@@ -112,6 +112,10 @@ class Format(unittest.TestCase):
         self.assertNotIn('href="javascript', html)
         self.assertIn('href="https://x.y/?q=&quot;1&quot;"', html)
         self.assertIn('href="evidence/r.txt"', html)
+        # A bare URL inside a link's URL is not linked again: its quotes would end the href.
+        html = viewer.md_inline("[t](https://a.b/-http://x/onmouseover=alert//) https://c.d")
+        self.assertEqual(html.count('"'), 4)
+        self.assertIn('<a href="https://c.d">https://c.d</a>', html)
 
     def test_gh_budget(self):
         with mock.patch.object(github.subprocess, "run") as run_gh:
@@ -624,6 +628,17 @@ class Hooks(unittest.TestCase):
         log = (model.HOME / s / "log.md").read_text()
         self.assertEqual([x.split(": ", 1)[1].split(" ", 1)[1] for x in log.splitlines() if "Commits on" in x],
                          ["hook work", "more work", "last work"])  # each once
+
+    def test_project_modules_do_not_run(self):
+        """Python starts in the user's project: its json.py must not replace the stdlib's in the hooks or the CLI."""
+        work, ran = repo("feat/S-1"), Path(BASE) / f"ran{time.monotonic_ns()}"
+        (work / "json.py").write_text(f"open({str(ran)!r}, 'w').close()\n")
+        data = json.dumps({"session_id": f"sid{time.monotonic_ns()}", "cwd": str(work)})
+        runs = [([str(ROOT / "scripts/hook.sh"), "session-start"], data), ([str(ROOT / "bin/tracker"), "rules"], ""),
+                ([*model.CLI, "rules"], "")]  # the viewer and spawn() start the CLI so
+        for cmd, stdin in runs:
+            subprocess.run(cmd, input=stdin, cwd=work, capture_output=True, text=True)
+            self.assertFalse(ran.exists(), cmd[0])
 
     def test_commits_wait_for_a_ticket(self):
         s, sid, work = slug(), f"sid{time.monotonic_ns()}", repo("feat/W-1")

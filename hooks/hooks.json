@@ -1,5 +1,5 @@
 {
-  "description": "work-tracker: give the session its id; at session start, in a session with a tracker (`tracker start`) inject the brief (short after a compaction), in one without, on a branch with an open ticket, have the model ask the user whether to link it; on user messages, report changes by others or GitHub (a ticket's move too), start a stale GitHub sync in the background, and give a periodic state line with the work git shows the tracker may not record, at once when files changed and no ticket is in progress; after a hand edit of a tracker file, count it as the session's own; log each commit (a subagent's too) and, once per `next`, ask whether a step ended; tell a subagent to leave the writing to the session; on the user's /work-tracker:watch, give the session the watch or end it; sync PR state after PR commands; at a turn's end, log the commits no other hook saw. scripts/hook.sh filters each event in shell first",
+  "description": "work-tracker: keep a tracked session's tracker current: the brief at session start, commits logged, PR state synced, a state line on user messages. README \"Hooks\" lists each event. scripts/hook.sh filters each event in shell first",
   "hooks": {
     "SessionStart": [
       {
