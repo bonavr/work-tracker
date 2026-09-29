@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from .model import HOME, ISOLATION_RULE, SYNC_MIN_INTERVAL_S, append_log, locked, short, spawn, today, Tracker
+from .model import ISOLATION_RULE, SYNC_MIN_INTERVAL_S, append_log, locked, short, spawn, today, Tracker
 from .git import default_branches
 from .session import (behind, branch_matches, changes_since, declined, get_mark, in_repos, inside_home, lag,
     load_session, match_cwd, own_edit, record_commits, remember, save_session, watch, Lag, Match)
@@ -149,7 +149,7 @@ def hook_edit(data: dict) -> None:
     sid = str(data.get("session_id") or "")
     m = match_cwd(data.get("cwd") or os.getcwd(), sid)
     edited = Path((data.get("tool_input") or {}).get("file_path") or "/").resolve()
-    if m and m.focus and edited.is_relative_to(HOME.resolve()) and edited.is_relative_to(m.tracker.root.resolve()):
+    if m and m.focus and edited.is_relative_to(m.tracker.root.resolve()):
         own_edit(sid, m, edited.stem)
 
 

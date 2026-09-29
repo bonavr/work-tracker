@@ -18,7 +18,7 @@ from functools import cached_property
 from pathlib import Path
 
 from .markdown import (BULLET, bullets, frontmatter_problems, link_ident, parse_links, parse_meta,
-    render_frontmatter, section, section_span, split_frontmatter, Link)
+    render_frontmatter, section, section_span, split_frontmatter, strip_comments, Link)
 
 HOME = Path(os.environ.get("TRACKER_HOME", Path.home() / ".claude" / "trackers")).expanduser()
 PACKAGE = Path(__file__).resolve().parent
@@ -314,7 +314,7 @@ class Record:
         self.rewrite("---\n" + "\n".join(render_frontmatter(lines, updates)) + "\n---\n" + body)
         self.meta.update(updates)
         for k in [k for k, v in updates.items() if v is None]:
-            del self.meta[k]
+            self.meta.pop(k, None)
 
     def rewrite(self, text: str) -> None:
         """Write the whole file; the record's body follows it."""
@@ -680,14 +680,19 @@ def all_trackers() -> list[Tracker]:
     return [Tracker(p) for p in sorted(HOME.iterdir()) if p.is_dir() and (p / "README.md").exists()]
 
 
+def tracker_at(slug: str) -> Tracker | None:
+    """The tracker named `slug`, if it exists. A slug is one folder name in HOME, never a path."""
+    slug = str(slug or "")
+    return Tracker(HOME / slug) if SAFE_NAME.fullmatch(slug) and (HOME / slug / "README.md").exists() else None
+
+
 RESOLUTION_LINE = re.compile(r"^(?:- )?\d{4}-\d{2}-\d{2}\b")
 
 
 def resolution(d: Record) -> str:
     """A closed decision's answer: the latest dated `YYYY-MM-DD (who): answer` line of its ## Resolution, or, when a
     person wrote it without one, its first line (detail lines follow the answer)."""
-    lines = [ln.strip() for ln in re.sub(r"<!--.*?-->", "", section(d.body, "Resolution"), flags=re.S).splitlines()
-             if ln.strip()]
+    lines = [ln.strip() for ln in strip_comments(section(d.body, "Resolution")).splitlines() if ln.strip()]
     dated = [ln for ln in lines if RESOLUTION_LINE.match(ln)]
     return (dated or lines or [""])[-1 if dated else 0].removeprefix("- ")
 
@@ -930,7 +935,7 @@ def append_to_section(rec: Record, heading: str, line: str) -> None:
     if not m:
         text = text.rstrip("\n") + f"\n\n## {heading}\n\n{line}\n"
     else:
-        block = re.sub(r"<!--.*?-->", "", m.group(0), flags=re.S).rstrip()
+        block = strip_comments(m.group(0)).rstrip()
         last = block.splitlines()[-1]
         gap = "\n" if BULLET.match(line) and (BULLET.match(last) or last.startswith("  ")) else "\n\n"
         rest = text[m.end():].lstrip("\n")

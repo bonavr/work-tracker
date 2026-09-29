@@ -15,7 +15,7 @@ from .model import (PR_MATCH_TTL_S, SYNC_MIN_INTERVAL_S, append_log, branch_entr
 from .git import default_branches, remote_of, repo_slug
 from .session import match_cwd, named_in, Match
 
-PR_FIELDS = "number,headRefName,state,isDraft,mergedAt,baseRefName,updatedAt"
+PR_FIELDS = "number,headRefName,state,isDraft,mergedAt,baseRefName,updatedAt,isCrossRepository"
 GH_LIST_LIMIT = 300  # newest PRs per repo in one call
 GH_LOOKUPS_MAX = 5  # single-PR calls per sync, for tickets whose PR is older than that list
 GH_TIMEOUT_S = 8  # one call
@@ -57,11 +57,19 @@ def gh_pr_of(repo: str, ticket: Record) -> dict | None:
 
 
 def pick_pr(prs: list[dict], ticket: Record) -> dict | None:
+    """The ticket's PR: by its number, else the PR from its branch. A fork's PR from a branch of the same name is
+    someone else's work (`own_prs`)."""
     if ticket.get("pr"):
         return next((p for p in prs if str(p["number"]) == str(ticket.get("pr"))), None)
-    mine = [p for p in prs if p["headRefName"] == ticket.get("branch")]
+    mine = [p for p in own_prs(prs) if p["headRefName"] == ticket.get("branch")]
     rank = {"OPEN": 0, "MERGED": 1, "CLOSED": 2}
     return min(mine, key=lambda p: (rank.get(p["state"], 3), -p["number"]), default=None)
+
+
+def own_prs(prs: list[dict]) -> list[dict]:
+    """The PRs from the repo's own branches. Anyone can open a PR from a fork, with any branch name, so a branch name
+    matches a ticket only in the repo itself (where the tracker's work lives: `in_repos`)."""
+    return [p for p in prs if not p.get("isCrossRepository")]
 
 
 # What a ticket's move needs from each open PR (model.whose_move), for all of them in one GraphQL call.
@@ -140,7 +148,7 @@ def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) ->
     GitHub is asked first, without the lock; the tracker is then reloaded and written under it."""
     if not tr.repos:
         return []
-    if not force and dt.datetime.now().timestamp() - tr.state().get("last_sync", 0) < min_interval:
+    if not force and time.time() - tr.state().get("last_sync", 0) < min_interval:
         return []
     # The open PRs the tickets know already: their review facts are asked for with the lists.
     known = {(tr.repo_of(t), int(t.get("pr"))) for t in tr.tickets
@@ -204,7 +212,7 @@ def apply_sync(tr: Tracker, found: dict[str, tuple[str, dict]], reviews: dict[st
         append_log(tr, f"PR {pr_name} {PR_EVENT[pr_state]}", ids)
     changes += unblocked(tr, blocked)
     state = tr.state()
-    state["last_sync"] = dt.datetime.now().timestamp()
+    state["last_sync"] = time.time()
     if reviews is not None:
         state["reviews"] = reviews
     tr.save_state(state)
@@ -223,11 +231,12 @@ def match_pr(m: Match, cwd: str | Path) -> tuple[Match, str]:
     asked = branch_entry(state.get("pr_match", {}), repo, m.branch)
     if asked and time.time() - asked.get("at", 0) < PR_MATCH_TTL_S:
         return m, asked.get("note", "")
-    prs = gh("pr", "list", "--repo", repo, "--head", m.branch, "--state", "all", fields="number,title,body")
+    prs = gh("pr", "list", "--repo", repo, "--head", m.branch, "--state", "all",
+             fields="number,title,body,isCrossRepository")
     if prs is None:
         return m, ""  # gh missing or failed: ask again next time
     note, hits, where = "", [], ""
-    pr = max(prs, key=lambda x: x["number"], default=None)
+    pr = max(own_prs(prs), key=lambda x: x["number"], default=None)
     if pr:
         for where in ("title", "body"):
             hits = [t for t in tr.tickets if named_in(pr.get(where) or "", t)]

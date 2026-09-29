@@ -96,9 +96,24 @@ def render_frontmatter(lines: list[str], updates: dict) -> list[str]:
 BULLET = re.compile(r"\s*[-*] ")
 
 
+def strip_comments(text: str) -> str:
+    """The text without its `<!-- -->` comments: the templates' guidance."""
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+
+def section_re(heading: str) -> re.Pattern:
+    """A `## ` section, from its heading to the next one; group 1 is its text. Case does not count, so reads and
+    writes find the same section."""
+    return re.compile(rf"^## {re.escape(heading)}\s*$(.*?)(?=^## |\Z)", re.M | re.S | re.I)
+
+
+def section_span(text: str, heading: str) -> re.Match | None:
+    return section_re(heading).search(text)
+
+
 def section(body: str, heading: str) -> str:
-    m = re.search(rf"^## {re.escape(heading)}\s*$(.*?)(?=^## |\Z)", body, re.M | re.S | re.I)
-    return m.group(1).strip() if m else ""
+    m = section_span(body, heading)
+    return m[1].strip() if m else ""
 
 
 def bullets(text: str) -> list[str]:
@@ -111,17 +126,12 @@ def headings(body: str) -> list[str]:
 
 def section_block(body: str, heading: str) -> str:
     """A section with its own heading, for showing on its own."""
-    m = re.search(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", body, re.M | re.S | re.I)
-    return m.group(0).strip() + "\n\n" if m else ""
+    m = section_span(body, heading)
+    return m[0].strip() + "\n\n" if m else ""
 
 
 def without_section(body: str, heading: str) -> str:
-    return re.sub(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", "", body, flags=re.M | re.S | re.I)
-
-
-def section_span(text: str, heading: str) -> re.Match | None:
-    """A section of a whole file, from its heading to the next `## ` heading."""
-    return re.search(rf"^## {re.escape(heading)}\s*$.*?(?=^## |\Z)", text, re.M | re.S)
+    return section_re(heading).sub("", body)
 
 
 # ---------------------------------------------------------------- link lines
@@ -140,7 +150,7 @@ class Link:
 def parse_links(text: str) -> tuple[list[Link], list[str]]:
     """The link lines of a Context/Links section, and any lines that do not follow the format."""
     items, bad = [], []
-    for ln in re.sub(r"<!--.*?-->", "", text, flags=re.S).splitlines():
+    for ln in strip_comments(text).splitlines():
         if not ln.strip():
             continue
         if ln.startswith("- "):

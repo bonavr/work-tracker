@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .model import (CLOSED_TICKET, HOME, IN_FLIGHT, SAFE_NAME, WINDOWS, all_trackers, append_log, atomic_write,
-    branch_entry, die, locked, put_entry, resolution, short, state_key, whose_move, Record, Tracker)
+    branch_entry, die, locked, put_entry, resolution, short, state_key, tracker_at, whose_move, Record, Tracker)
 from .git import branch_of, changed_files, git, head_of, remote_of, repo_slug, worktree, worktree_key
 
 
@@ -139,8 +139,7 @@ def decline(cwd: str | Path) -> None:
 
 def session_tracker(sid: str) -> Tracker | None:
     """The tracker `tracker start` chose for this session."""
-    slug = load_session(sid).get("tracker", "") if sid else ""
-    return Tracker(HOME / slug) if slug and (HOME / slug / "README.md").exists() else None
+    return tracker_at(load_session(sid).get("tracker", ""))
 
 
 def session_focus(tr: Tracker, sid: str) -> list[str]:
@@ -153,8 +152,7 @@ def context_tracker(sid: str | None = None) -> Tracker | None:
     """The tracker context: the tracker `tracker start` chose for this session (`sid`, default TRACKER_SESSION), or
     the one TRACKER names. Without one, the hooks do nothing."""
     own = session_tracker(session_id() if sid is None else sid)
-    slug = os.environ.get("TRACKER", "")
-    return own or (Tracker(HOME / slug) if slug and (HOME / slug / "README.md").exists() else None)
+    return own or tracker_at(os.environ.get("TRACKER", ""))
 
 
 def match_cwd(cwd: str | Path, sid: str | None = None, tracker: Tracker | None = None) -> Match | None:
@@ -219,10 +217,7 @@ def find_tracker(args) -> Tracker | None:
     points to."""
     slug = getattr(args, "tracker", None) or os.environ.get("TRACKER")
     if slug:
-        root = HOME / slug
-        if not (root / "README.md").exists():
-            die(f"no tracker '{slug}' in {HOME}")
-        return Tracker(root)
+        return tracker_at(slug) or die(f"no tracker '{slug}' in {HOME}")
     cwd = Path.cwd()
     for parent in [cwd, *cwd.parents]:
         if parent.parent == HOME and (parent / "README.md").exists():
@@ -253,9 +248,7 @@ def locate(args, ident: str) -> tuple[Tracker, Record]:
     every tracker by ticket or Issue id: this repo's first, then all. More than one hit is an error that lists them."""
     slug, sep, rest = ident.partition(":")
     if sep:
-        if not (HOME / slug / "README.md").exists():
-            die(f"no tracker '{slug}' in {HOME}")
-        tr = Tracker(HOME / slug)
+        tr = tracker_at(slug) or die(f"no tracker '{slug}' in {HOME}")
         return tr, tr.find(rest)
     tr = find_tracker(args)
     rec = tr and (tr.lookup(ident) or tr.by_pr_or_branch(ident))

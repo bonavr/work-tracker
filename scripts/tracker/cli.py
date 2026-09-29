@@ -105,10 +105,10 @@ def cmd_decisions(args):
     status = args.status or ("" if args.all else "open")
     rows = [d for d in tr.decisions if not status or d.get("status", "open") == status]
     for d in rows:
-        status = d.get("status", "open")
+        state = d.get("status", "open")
         touched = ", ".join(tr.touched_by(d))
-        tail = f" → {resolution(d)}" if status == "closed" else (f" · owner {d.get('owner')}" if d.get("owner") else "")
-        print(f"{d.id}  {status:<6}  {d.get('title')}" + (f"  ({touched})" if touched else "") + tail)
+        tail = f" → {resolution(d)}" if state == "closed" else (f" · owner {d.get('owner')}" if d.get("owner") else "")
+        print(f"{d.id}  {state:<6}  {d.get('title')}" + (f"  ({touched})" if touched else "") + tail)
     if not rows:
         print("no decisions" if args.all or args.status else "no open decisions")
     settled = sum(d.get("status") == "closed" for d in tr.decisions)
@@ -407,7 +407,7 @@ def section_named(rec: Record, word: str) -> str:
     return hits[0]
 
 
-def check_links(tr: Tracker, text: str) -> None:
+def require_links(tr: Tracker, text: str) -> None:
     items, bad = parse_links(text)
     if bad or not items:
         die("a link line is `- Label: [title](url) — why it matters`" + (f", not: {short(bad[0], 80)}" if bad else ""))
@@ -435,7 +435,7 @@ def cmd_add(args):
     if heading in LIST_SECTIONS and not BULLET.match(text):
         text = "- " + text
     if heading in LINK_SECTIONS:
-        check_links(tr, text)
+        require_links(tr, text)
     append_to_section(rec, heading, text)
     touch(rec)
     print(f"{rec.id} {heading}: added")
@@ -449,7 +449,7 @@ def cmd_put(args):
     if not text.strip():
         die("put takes the section's whole new text: pass it, or `-` and pipe it (a heredoc: <<'EOF')")
     if heading in LINK_SECTIONS:
-        check_links(tr, text)
+        require_links(tr, text)
     if heading == "Carry forward":
         for b in bullets(text):
             fit("carry", b)

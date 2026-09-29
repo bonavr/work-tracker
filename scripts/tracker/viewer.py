@@ -13,10 +13,10 @@ import sys
 import threading
 import time
 
-from .markdown import headings, section_block, without_section, Link
+from .markdown import headings, section_block, strip_comments, without_section, Link
 from .model import (CLI, CLOSED_TICKET, EVIDENCE_DIR, HOME, IN_FLIGHT, LIST_KEYS, PACKAGE, PYTHON, README_SECTIONS,
-    ROOT, STAGES, WINDOWS, all_trackers, atomic_write, branch_entry, files_hash, sequence, sort_key, spawn, whose_move,
-    Dep, Move, Record, Tracker)
+    ROOT, STAGES, WINDOWS, all_trackers, atomic_write, branch_entry, files_hash, sequence, sort_key, spawn, tracker_at,
+    whose_move, Dep, Move, Record, Tracker)
 from .session import ago, live_sessions, match_cwd, Live
 from .contract import check
 from .views import pr_label, stage_counts, start_text
@@ -49,8 +49,7 @@ def link_html(url: str, text: str) -> str:
 
 def md_to_html(md: str) -> str:
     """A small Markdown subset: headings, lists (nested by indent), code fences, tables, paragraphs."""
-    md = re.sub(r"<!--.*?-->", "", md, flags=re.S)
-    out, para, lines, i = [], [], md.splitlines(), 0
+    out, para, lines, i = [], [], strip_comments(md).splitlines(), 0
 
     def flush():
         if para:
@@ -596,10 +595,10 @@ def serve(port: int = 0) -> None:
         while True:
             time.sleep(10)
             for slug, seen in list(server.viewed.items()):
-                root = HOME / slug
-                if time.monotonic() - seen < 60 and (root / "README.md").exists():
+                tr = tracker_at(slug) if time.monotonic() - seen < 60 else None
+                if tr:
                     try:
-                        sync(Tracker(root), force=False, min_interval=VIEWER_SYNC_S)
+                        sync(tr, force=False, min_interval=VIEWER_SYNC_S)
                     except (Exception, SystemExit):  # gh missing, a bad file, a busy lock: try again next round
                         pass
 

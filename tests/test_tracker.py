@@ -117,6 +117,13 @@ class Format(unittest.TestCase):
         self.assertEqual(html.count('"'), 4)
         self.assertIn('<a href="https://c.d">https://c.d</a>', html)
 
+    def test_fork_prs_are_not_the_tickets(self):
+        t = model.Record(Path("T-1.md"), "ticket", {"id": "T-1", "branch": "fix"}, "")
+        fork = {"number": 9, "headRefName": "fix", "state": "OPEN", "isCrossRepository": True}
+        own = {"number": 3, "headRefName": "fix", "state": "CLOSED", "isCrossRepository": False}
+        self.assertIs(github.pick_pr([fork, own], t), own)
+        self.assertIsNone(github.pick_pr([fork], t))
+
     def test_gh_budget(self):
         with mock.patch.object(github.subprocess, "run") as run_gh:
             github.budget(0)  # spent: no call starts, so a hook ends before its timeout
@@ -506,6 +513,15 @@ class Writes(unittest.TestCase):
         self.assertNotIn("Settled one", listed)
         self.assertIn("1 settled", listed)
         self.assertIn("Settled one", run(*t, "decisions", "--all"))
+
+        path = model.HOME / s / "tickets" / "L-1.md"
+        path.write_text(path.read_text().replace("## Carry forward", "## carry Forward"))  # a hand edit
+        run(*t, "add", "L-1", "carry", "Fact 6")
+        self.assertEqual(path.read_text().lower().count("## carry forward"), 1)  # found, not added again
+
+        for name in ("..", f"../{Path(model.HOME).name}/{s}"):  # a slug is a folder in TRACKER_HOME, not a path
+            self.assertIn("no tracker", run("--tracker", name, "index", code=2))
+            self.assertIn("no tracker", run("context", f"{name}:L-1", code=2))
 
 
     def test_put_stdin_and_the_tracker_folder(self):
