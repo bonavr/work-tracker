@@ -1,0 +1,7 @@
+# Lint config only: the plugin runs from its folder with the stdlib, and has nothing to build or install.
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
