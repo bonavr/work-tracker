@@ -1,7 +1,7 @@
 """`tracker watch`: one watcher per tracker reports each change that may need the user, one line per ticket, agent or
 check: the new log lines, the facts no log line holds (moves, `next`, stages, tickets that can start, `check` errors),
-the Claude sessions on the tracker, and GitHub (`sync`). Only the user starts it: in a terminal, or in a Claude session
-they gave the watch by typing /work-tracker:watch (a grant the prompt hook writes)."""
+the agent sessions on the tracker, and GitHub (`sync`). Only the user starts it: in a terminal, or in an agent session
+they gave the watch with its skill command (a grant the prompt hook writes)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .model import (HOME, IN_FLIGHT, SAFE_NAME, STATE_KEEP_DAYS, atomic_write, die, files_hash, locked, short,
     whose_move, Tracker)
-from .session import CLAUDE_SESSIONS, alive, live_sessions, match_cwd, Live
+from .session import CLAUDE_SESSIONS, alive, live_sessions, match_cwd, session_id, Live
 from .contract import check
 from .views import LOG_LINE, start_text
 from .github import budget, sync
@@ -38,13 +38,12 @@ REFUSED = 4  # exit code: not the user's watch, or another watcher has the track
 
 # ---------------------------------------------------------------- the user's grant
 # Only a prompt the user types fires the UserPromptSubmit hook, so the grant it writes is the user's: no command the
-# model runs gives one. In a Claude session `tracker watch` runs only with it; in a terminal it needs none.
+# model runs gives one. In an agent session `tracker watch` runs only with it; in a terminal it needs none.
 
 
-def claude_session() -> tuple[bool, str]:
-    """Whether this command runs in a Claude session, and the session's id: the plugin's TRACKER_SESSION, or Claude
-    Code's own variables where the plugin's SessionStart hook did not run."""
-    sid = os.environ.get("TRACKER_SESSION") or os.environ.get("CLAUDE_CODE_SESSION_ID") or ""
+def agent_session() -> tuple[bool, str]:
+    """Whether this command runs in an agent session, and its id."""
+    sid = session_id()
     return bool(sid) or os.environ.get("CLAUDECODE") == "1", sid
 
 
@@ -77,13 +76,12 @@ def set_grant(sid: str, on: bool) -> None:
 
 def watching() -> bool:
     """This command runs in a session the user gave the watch: it watches only, and writes nothing to trackers."""
-    inside, sid = claude_session()
+    inside, sid = agent_session()
     return inside and granted(sid)
 
 
-def claude_name(sid: str) -> str:
-    """A Claude session's name, from Claude Code's session files (as `live_sessions` reads them); else its id's
-    start."""
+def session_name(sid: str) -> str:
+    """A session's name when the host supplies it; else the start of its id."""
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
             c = json.loads(f.read_text())

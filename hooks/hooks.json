@@ -56,7 +56,7 @@
         ]
       },
       {
-        "matcher": "AskUserQuestion",
+        "matcher": "AskUserQuestion|request_user_input",
         "hooks": [
           {
             "type": "command",
@@ -72,6 +72,17 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\" stop",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/hook.sh\" session-end",
             "timeout": 10
           }
         ]

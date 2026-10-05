@@ -10,6 +10,8 @@ A tracker is the single record of a piece of work's plan and state: the **hand-o
 
 The CLI is `tracker`; `tracker <command> --help` gives each command's syntax. If this skill is invoked with arguments, run `tracker $ARGUMENTS` and report the result; with none, run `tracker start`.
 
+Use the command prefix from the session's `[work-tracker]` hook for every call when supplied. If `tracker` is absent from PATH, use the absolute path to `bin/tracker` at this plugin's root (two directories above this file).
+
 ## Model
 
 | File | Holds |

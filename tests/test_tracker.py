@@ -23,8 +23,9 @@ BASE = tempfile.mkdtemp()
 atexit.register(shutil.rmtree, BASE, True)
 os.environ["TRACKER_HOME"] = f"{BASE}/home"  # before the import: HOME is read once
 os.environ["CLAUDE_CONFIG_DIR"] = f"{BASE}/claude"  # the running Claude sessions the viewer reads: not the user's
-# A Claude session running the tests must not leak in: its tracker, its id, or that it is one.
-for var in ("TRACKER", "TRACKER_SESSION", "CLAUDE_ENV_FILE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID"):
+# An agent session running the tests must not leak in: its tracker, its id, or that it is one.
+for var in ("TRACKER", "TRACKER_SESSION", "CLAUDE_ENV_FILE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID",
+            "CODEX_THREAD_ID", "PLUGIN_ROOT"):
     os.environ.pop(var, None)
 sys.path.insert(0, str(ROOT / "scripts"))
 from tracker import cli, git, github, hooks, markdown, model, session, viewer, views, watcher  # noqa: E402
@@ -599,7 +600,7 @@ class Hooks(unittest.TestCase):
         env_file = Path(BASE) / f"{sid}.env"  # what the session's Bash commands get: its id, and the CLI on PATH
         path = f"{Path(sys.executable).parent}:/usr/bin:/bin"
         offer = hook("session-start", sid, work, env={"CLAUDE_ENV_FILE": str(env_file), "PATH": path}, source="startup")
-        self.assertIn("AskUserQuestion", said(offer))
+        self.assertIn("host's question tool", said(offer))
         self.assertEqual(env_file.read_text(), f'export TRACKER_SESSION={sid}\nexport PATH="$PATH:{ROOT}/bin"\n')
         self.assertIsNone(hook("prompt", sid, work, prompt="hi"))
         self.assertIsNone(hook("stop", sid, work))
@@ -644,6 +645,95 @@ class Hooks(unittest.TestCase):
         log = (model.HOME / s / "log.md").read_text()
         self.assertEqual([x.split(": ", 1)[1].split(" ", 1)[1] for x in log.splitlines() if "Commits on" in x],
                          ["hook work", "more work", "last work"])  # each once
+
+    def test_codex_session(self):
+        s, sid, work = slug(), f"codex{time.monotonic_ns()}", repo("feat/C-1")
+        run("init", s, "--title", "Codex", "--owner", "me")
+        run("--tracker", s, "new", "C-1", "--title", "Codex work", "--branch", "feat/C-1")
+        env = {"CODEX_THREAD_ID": sid, "PLUGIN_ROOT": str(ROOT)}
+        with mock.patch.dict(os.environ, env):
+            self.assertIn("C-1", run("start", s, cwd=work))
+            run("set", "C-1", "status=in-progress", cwd=work)
+        started = said(hook("session-start", sid, work, env=env, source="resume"))
+        self.assertIn(f"TRACKER_SESSION={sid} {ROOT}/bin/tracker", started)
+        self.assertIn("C-1 in-progress", started)
+        self.assertEqual(session.load_session(sid)["activity"]["status"], "idle")
+        self.assertIn("C-1", said(hook("prompt", sid, work, env=env, prompt="work")))
+        self.assertEqual(session.load_session(sid)["activity"]["status"], "busy")
+        go = {"questions": [{"title": "Push?", "options": ["Yes, push", "Not now"]}]}
+        self.assertIsNone(hook("answered", sid, work, tool_input=go))
+        pick = {"questions": [{"title": "Store?", "options": ["Postgres", "SQLite"]}]}
+        self.assertIn("direction decision", said(hook("answered", sid, work, tool_input=pick)))
+        commit(work, "Codex commit")
+        hook("post-bash", sid, work, env=env, tool_name="Bash", tool_input={"command": "git commit -m x"})
+        self.assertIsNone(hook("stop", sid, work, env=env))
+        self.assertEqual(session.load_session(sid)["activity"]["status"], "idle")
+        self.assertEqual([x.sid for x in session.live_sessions(s)], [sid])
+        self.assertEqual((model.HOME / s / "log.md").read_text().count("Codex commit"), 1)
+        hook("session-end", sid, work, env=env)
+        self.assertEqual(session.live_sessions(s), [])
+        self.assertEqual(session.load_session(sid)["tracker"], s)  # a resume keeps its tracker
+
+        # A fork's hook id can differ from its shell thread id: the command prefix carries the hook's id.
+        other = {**env, "CODEX_THREAD_ID": f"fork{sid}"}
+        self.assertIn(f"TRACKER_SESSION={sid}", said(hook("session-start", sid, work, env=other)))
+        with mock.patch.dict(os.environ, {**other, "TRACKER_SESSION": sid}):
+            self.assertEqual(session.session_id(), sid)
+            self.assertIn("C-1", run("index", cwd=work))
+
+    def test_codex_command_outside_a_repo(self):
+        sid = f"codex{time.monotonic_ns()}"
+        env = {"PLUGIN_ROOT": str(ROOT)}
+        self.assertIn(f"TRACKER_SESSION={sid}", said(hook("session-start", sid, Path(BASE), env=env)))
+        self.assertEqual(session.load_session(sid), {})  # command discovery does not link a tracker
+
+    def test_edit_input_formats(self):
+        s, sid, work = slug(), f"sid{time.monotonic_ns()}", repo("feat/E-1")
+        run("init", s, "--title", "Edits", "--owner", "me")
+        run("--tracker", s, "new", "E-1", "--title", "Edit work", "--branch", "feat/E-1")
+        with mock.patch.dict(os.environ, {"TRACKER_SESSION": sid}):
+            run("start", s, cwd=work)
+        root = model.HOME / s
+        path = root / "tickets/E-1.md"
+        cases = [(work, {"file_path": str(path)}),
+                 (work, {"command": f"*** Begin Patch\n*** Update File: {path}\n*** End Patch"}),
+                 (root, {"command": "*** Begin Patch\n*** Update File: tickets/E-1.md\n*** End Patch"})]
+        for (cwd, tool), status in zip(cases, ("in-progress", "todo", "in-progress")):
+            with self.subTest(tool=tool):
+                before = session.load_session(sid)["seen"]
+                path.write_text(re.sub(r"^status: .*", f"status: {status}", path.read_text(), flags=re.M))
+                hook("edit", sid, cwd, tool_input=tool)
+                self.assertNotEqual(session.load_session(sid)["seen"], before)
+                self.assertNotIn("Changed since your brief", said(hook("prompt", sid, work, prompt="next")))
+
+    def test_session_identity(self):
+        cases = [({}, ""), ({"CODEX_THREAD_ID": "codex"}, "codex"),
+                 ({"CLAUDE_CODE_SESSION_ID": "claude", "CODEX_THREAD_ID": "codex"}, "claude"),
+                 ({"TRACKER_SESSION": "explicit", "CODEX_THREAD_ID": "codex"}, "explicit")]
+        for env, expected in cases:
+            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(session.session_id(), expected)
+
+    def test_recent_activity(self):
+        sid, s, work = f"sid{time.monotonic_ns()}", slug(), repo("feat/A-1")
+        session.session_activity(sid, "busy")
+        self.assertEqual(session.load_session(sid), {})  # untracked sessions have no activity file
+        session.save_session(sid, tracker=s, cwd=str(work))
+        with mock.patch.object(session.time, "time", return_value=100):
+            session.session_activity(sid, "busy")
+        with mock.patch.object(session.time, "time", return_value=110):
+            session.session_activity(sid, "busy")
+            self.assertEqual(session.load_session(sid)["activity"], {"status": "busy", "since": 100, "at": 110})
+            self.assertEqual(session.live_sessions(s)[0].since, 100)
+        with mock.patch.object(session.time, "time", return_value=110 + session.ACTIVITY_MAX_AGE_S):
+            self.assertEqual(session.live_sessions(s), [])
+        session.session_activity(sid, "idle")
+        native = session.CLAUDE_SESSIONS / f"{sid}.json"
+        native.parent.mkdir(parents=True, exist_ok=True)
+        native.write_text(json.dumps({"sessionId": sid, "pid": os.getpid(), "name": "native", "status": "busy"}))
+        self.assertEqual([(x.name, x.status) for x in session.live_sessions(s)], [("native", "busy")])
+        native.write_text(json.dumps({"sessionId": sid, "pid": -1}))
+        self.assertEqual(session.live_sessions(s), [])  # a dead native process is not replaced by hook activity
 
     def test_project_modules_do_not_run(self):
         """Python starts in the user's project: its json.py must not replace the stdlib's in the hooks or the CLI."""
@@ -873,6 +963,18 @@ class Watch(unittest.TestCase):
                        "TRACKER_SESSION": worker}, capture_output=True, check=True)
         self.assertIn("works on tracker", said(hook("prompt", worker, cwd, prompt="/work-tracker:watch")))
         self.assertFalse(watcher.granted(worker))  # a session on a tracker does the work
+
+    def test_codex_watch_grant(self):
+        sid, cwd = f"codex{time.monotonic_ns()}", self.work
+        with mock.patch.dict(os.environ, {"CODEX_THREAD_ID": sid}):
+            run("watch", self.s, "--once", code=4)
+            hook("prompt", sid, cwd, prompt=f"$work-tracker:watch {self.s}")
+            self.assertTrue(watcher.granted(sid))
+            self.assertIn(f"watching {self.s}", run("watch", self.s, "--once"))
+            run(*self.t, "log", "refused", code=4)
+            hook("prompt", sid, cwd, prompt="$work-tracker:watch stop")
+            self.assertFalse(watcher.granted(sid))
+            run("watch", self.s, "--once", code=4)
 
 
 if __name__ == "__main__":

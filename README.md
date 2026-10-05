@@ -1,6 +1,6 @@
 # work-tracker
 
-A Claude Code plugin that keeps the plan and progress of a piece of work (a feature, a project, a migration) in plain Markdown on your machine. Claude reads it at the start of each session and updates it as it works, so the next session continues where the last one stopped.
+A Claude Code and Codex plugin that keeps the plan and progress of a piece of work (a feature, a project, a migration) in plain Markdown on your machine. The agent reads it at the start of each session and updates it as it works, so the next session continues where the last one stopped.
 
 - Tickets with dependencies, direction decisions and a dated log.
 - Hooks log your commits and pull PR state from GitHub.
@@ -8,14 +8,14 @@ A Claude Code plugin that keeps the plan and progress of a piece of work (a feat
 
 ## Usage
 
-Talk to Claude. It runs the `tracker` CLI for you.
+Talk to the agent. It runs the `tracker` CLI for you.
 
-1. **Create a tracker.** Ask Claude, for example: "Make a tracker for the payments rework in acme/api, with tickets for the schema, the API and the admin page." Give it the documents the work answers to (spec, issue, design): they go in the tracker's Context. Name the GitHub repo, so PR state syncs.
-2. **Start a session on it.** Say "work on the payments tracker", or type `/work-tracker:tracker start payments`. Claude gets a brief: where the work is, what is under way, what it waits on.
+1. **Create a tracker.** Ask the agent, for example: "Make a tracker for the payments rework in acme/api, with tickets for the schema, the API and the admin page." Give it the documents the work answers to (spec, issue, design): they go in the tracker's Context. Name the GitHub repo, so PR state syncs.
+2. **Start a session on it.** Say "work on the payments tracker", or type `/work-tracker:tracker start payments` in Claude Code or `$work-tracker:tracker start payments` in Codex. The agent gets a brief: where the work is, what is under way, what it waits on.
    - A new session on a branch with an open ticket asks at your first message whether to link it. Answer yes, or "Not now" (no offer on that branch for a day).
-3. **Work as usual.** Claude records steps, decisions and pauses as they happen. The hooks log each commit and keep PR state current. You write nothing yourself.
-4. **See it.** Ask Claude to open the tracker, or run `tracker open`. The page updates live.
-5. **Oversee many sessions (optional).** In a separate Claude session, type `/work-tracker:watch payments`. It notifies you when something needs you: a review came back, checks fail, an agent waits on you. `/work-tracker:watch stop` ends it. In a terminal: `tracker watch payments`.
+3. **Work as usual.** The agent records steps, decisions and pauses as they happen. The hooks log each commit and keep PR state current. You write nothing yourself.
+4. **See it.** Ask the agent to open the tracker, or run `tracker open`. The page updates live.
+5. **Oversee many sessions (optional).** In a separate session, type `/work-tracker:watch payments` in Claude Code or `$work-tracker:watch payments` in Codex. It notifies you when something needs you: a review came back, checks fail, an agent waits on you. Invoke the same skill with `stop` to end it. In a terminal: `tracker watch payments`.
 
 `/work-tracker:tracker <command>` runs any `tracker` command, for example `/work-tracker:tracker index --active`.
 
@@ -34,7 +34,11 @@ Talk to Claude. It runs the `tracker` CLI for you.
 | `tracker rules` | the full format: keys, statuses, sections, text limits |
 | `tracker <command> --help` | the syntax of a command |
 
-The `tracker` command is on Claude's Bash PATH while the plugin is enabled. In a terminal, run the plugin's `bin/tracker`, or put that folder on your PATH.
+Claude's session hook adds `tracker` to its Bash PATH. Codex's session hook gives the agent the installed `bin/tracker` path and the hook's session id as a command prefix. The CLI also reads `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID` when `TRACKER_SESSION` is absent. In a terminal, run the plugin's `bin/tracker`, or put that folder on your PATH.
+
+### Install in Codex
+
+Add this folder to a [personal or repo marketplace](https://developers.openai.com/plugins/build/plugins), then run `codex plugin add work-tracker@<marketplace-name>`. Codex accepts the existing Claude-compatible manifest. Review and trust the plugin's hooks in Codex, then start a new chat. Both hosts use the same tracker files; `TRACKER_HOME` changes their root when needed.
 
 ## Requirements
 
@@ -69,7 +73,7 @@ Each tracker is a folder in `~/.claude/trackers/<slug>/` (`TRACKER_HOME` changes
 - The branch names the session's tickets: each ticket whose `branch` it is, a `tracker use <id>` choice, a ticket id or Issue id in the branch name, or the branch's PR.
 - Each new session (after `/clear` too) starts on no tracker. Many sessions can share one tracker; `tracker start <slug> --on <id>` puts a session on one ticket of a shared branch.
 - The tracker never changes git.
-- **Isolation**: the tracker is private to the work. Outside it (code, commits, branch names, PRs, issues) Claude writes each fact in its own words and cites only real ids (an Issue id, a PR number, a URL), never the tracker's ids or name.
+- **Isolation**: the tracker is private to the work. Outside it (code, commits, branch names, PRs, issues) the agent writes each fact in its own words and cites only real ids (an Issue id, a PR number, a URL), never the tracker's ids or name.
 
 ### Hooks
 
@@ -77,25 +81,26 @@ Each hook runs `scripts/hook.sh`, which filters the event in shell first. In a s
 
 | Event | Does |
 |---|---|
-| SessionStart | Gives the session its id. With a tracker: logs new commits, syncs PR state (at most every 10 min) and injects the brief. With none, on a branch with an open ticket: has Claude offer the link at your first message. |
+| SessionStart | Gives the session its command prefix or shell environment. With a tracker: logs new commits, syncs PR state (at most every 10 min) and injects the brief. With none, on a branch with an open ticket: has the agent offer the link at your first message. |
 | UserPromptSubmit | Reports what other sessions or GitHub changed since the brief. On the first message and every 5th: one state line, with work the tracker may not show (unlogged commits, uncommitted files). Starts a stale GitHub sync in the background. Handles `/work-tracker:watch`. |
 | PostToolUse (Bash) | After a commit: logs it, and once per next action asks whether a step ended. After `git push` or `gh pr …`: records the branch on its ticket and syncs PR state. |
-| PostToolUse (Edit, Write, MultiEdit) | Counts a hand edit of a tracker file as this session's own. |
-| PostToolUse (AskUserQuestion) | Asks Claude to record the answer when it settles a direction decision. |
+| PostToolUse (Edit, Write, MultiEdit, apply_patch) | Counts a hand edit of a tracker file as this session's own. |
+| PostToolUse (AskUserQuestion, request_user_input) | Asks the agent to record the answer when it settles a direction decision. |
 | SubagentStart | Tells a subagent the tracker and ticket, and that it writes nothing to them. |
 | Stop | Logs the commits no other hook saw. |
+| SessionEnd | Logs remaining commits and ends the session's activity in the viewer. |
 
 ### Viewer
 
 - `tracker open [id]` starts a local server (Python `http.server`, 127.0.0.1 only) when none runs, and opens the page. The page polls every 3 s and updates in place. The server stops about 3 min after the last request.
-- **Now** shows the tickets under way (your move first), each branch's handoff, and the Claude sessions on this machine that work on the tracker (a ring spins while one works).
+- **Now** shows the tickets under way (your move first), each branch's handoff, and the agent sessions on this machine that work on the tracker (a ring spins while one works).
 - While a page is open, the server syncs PR state every 2 min.
-- The session list reads Claude Code's `~/.claude/sessions/*.json` (`CLAUDE_CONFIG_DIR` when set). That format is not documented: if it changes, the page shows no sessions and the rest still works.
+- The session list uses hook activity: a user prompt marks a tracked session busy, Stop marks it idle, and SessionEnd marks it ended. Activity expires after a day without events. This shows the last reported state; an interrupted turn can remain busy until the next event. Claude Code's `~/.claude/sessions/*.json` (`CLAUDE_CONFIG_DIR` when set) supplies process liveness and names when available. Codex needs no session-file parser.
 
 ### Watch
 
 - `tracker watch [name]` prints each change as one line; `!` marks what needs you. One watcher per tracker.
-- Only the user starts it: in a terminal, or with `/work-tracker:watch <tracker>`, which makes that Claude session a read-only overseer that sends notifications.
+- Only the user starts it: in a terminal, or with the host's watch skill command, which makes that session a read-only overseer that sends notifications when the host supports them, or replies in chat.
 - The CLI refuses `watch` in a session without that grant, and refuses every write in a session with it.
 
 ### Upgrading a tracker
@@ -119,7 +124,7 @@ Environment variables. All are optional.
 
 ## Develop
 
-- Run from a checkout: `claude --plugin-dir <path to this folder>`, then `/reload-plugins` after an edit. An open viewer restarts itself when `scripts/tracker/` changes, and an open page reloads when `viewer/` changes.
+- Run from a checkout in Claude Code: `claude --plugin-dir <path to this folder>`, then `/reload-plugins` after an edit. In Codex, install through the marketplace; after a change, bump the manifest version and run `codex plugin add work-tracker@<marketplace-name>` again. An open viewer restarts itself when `scripts/tracker/` changes, and an open page reloads when `viewer/` changes.
 - Test: `python3 -m unittest discover tests` (about 10 s, no network). Lint: `uvx ruff check`.
 - Ship: bump `version` in `.claude-plugin/plugin.json`. Installed copies are cached by version.
 - The format's contract (keys and who writes each, statuses, link labels, sections) is the constants in `scripts/tracker/model.py`. `tracker rules` prints it, `tracker check` enforces it, and the hooks and templates read it.

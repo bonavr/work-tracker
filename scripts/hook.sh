@@ -23,8 +23,8 @@ field() {
 
 field session_id
 case $value in *[!A-Za-z0-9._-]*) sid= ;; *) sid=$value ;; esac
-# Give the session's Bash commands its id, so `tracker start` can tie a tracker to this session, and the CLI when the
-# plugin's bin/ is not on PATH already (Claude Code does not add it in `claude plugin eval` runs).
+# Claude's shell commands get their id and PATH through its env file. Other hosts use their session environment
+# (`session_id` in Python) and the skill's path to bin/tracker.
 if [ "$event" = session-start ] && [ -n "$CLAUDE_ENV_FILE" ] && [ -n "$sid" ]; then
   echo "export TRACKER_SESSION=$sid" >> "$CLAUDE_ENV_FILE"
   bin=$(cd "${0%/*}/../bin" && pwd)
@@ -54,18 +54,24 @@ on_branch() {
 watch=
 if [ "$event" = prompt ]; then
   field prompt
-  case $value in /work-tracker:watch*|/watch*) watch=1 ;; esac
+  case $value in /work-tracker:watch*|/watch*|'$work-tracker:watch'*|'$watch'*) watch=1 ;; esac
 fi
 
 if [ -z "$watch" ] && [ -z "$TRACKER" ] && ! { [ -n "$sid" ] && [ -f "$session.json" ]; }; then
-  [ "$event" = session-start ] && on_branch || exit 0
+  [ "$event" = session-start ] || exit 0
+  # A host without an env file needs the command prefix even outside a git branch.
+  { [ -n "$PLUGIN_ROOT" ] && [ -z "$CLAUDE_ENV_FILE" ]; } || on_branch || exit 0
 fi
 
 case $event in
   edit)
     [ -n "$sid" ] && [ -f "$session.json" ] || exit 0
     field file_path  # a tracker file: Python counts the change as this session's. On Windows, Python decides
-    case $value in "$home"/*|[A-Za-z]:*) ;; *) exit 0 ;; esac
+    case $value in "$home"/*|[A-Za-z]:*) ;; *)
+      # apply_patch carries paths in its command; relative paths can be inside the tracker cwd.
+      case $input in *"$home"*) ;; *) exit 0 ;; esac
+      ;;
+    esac
     ;;
   post-bash)
     case $input in *git*commit*|*git*push*|*gh*pr*) ;; *) exit 0 ;; esac

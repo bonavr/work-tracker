@@ -25,7 +25,7 @@ from .contract import check, migrate, rules_lines
 from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, brief, context_lines, dep_lines, index_lines, order_lines,
     start_text)
 from .github import match_pr, sync
-from .watcher import REFUSED, Watcher, claude_name, claude_session, granted, watching
+from .watcher import REFUSED, Watcher, agent_session, granted, session_name, watching
 
 # ---------------------------------------------------------------- templates
 
@@ -66,7 +66,7 @@ def cmd_init(args):
     create(root / "README.md", from_template("README", meta, DEFAULT_LABELS))
     create(root / "log.md", f"# Log — {args.title}\n\nAppend-only. Newest at the bottom.\n\n")
     create(root / ".gitignore", ".state.json\n*.tmp\n")
-    print(f"created {root}. Next: `tracker start {args.slug}` ties this Claude session to it (in a terminal, pass "
+    print(f"created {root}. Next: `tracker start {args.slug}` ties this session to it (in a terminal, pass "
           f"`--tracker {args.slug}` to each command), then `tracker new <ID> --title \"...\"` adds tickets")
 
 
@@ -727,7 +727,7 @@ def one_tracker(hits: list[Tracker], sure: bool, head: str, cmd: str) -> Tracker
 
 
 def cmd_start(args):
-    """Tie a tracker to this Claude session: its commands and hooks then use it; `--on` puts the session on some of
+    """Tie a tracker to this agent session: its commands and hooks then use it; `--on` puts the session on some of
     its tickets alone. With no name: the tracker that holds the `--on` tickets, else the tracker with an open ticket
     on this branch; in a session that has a tracker, its brief. Never changes git; writes the tracker only to record a
     branch that its PR ties to one ticket, and to log the branch's new commits, as the hooks do."""
@@ -765,7 +765,7 @@ def cmd_start(args):
     if closed:
         die(f"--on takes open tickets: {'; '.join(closed)}")
     if not sid:
-        die("no Claude session id (TRACKER_SESSION is set by the plugin's SessionStart hook): pass --tracker "
+        die("no agent session id: set TRACKER_SESSION, or pass --tracker "
             f"{tr.slug} to each command, or set TRACKER={tr.slug}")
     drop_session(sid)  # a new start: nothing seen yet
     save_session(sid, tracker=tr.slug, focus=[r.id for r in picks] or None)
@@ -776,12 +776,12 @@ def cmd_start(args):
 
 
 def cmd_watch(args):
-    """The user's watch: in a terminal, or in the Claude session their /work-tracker:watch gave it (the prompt hook's
+    """The user's watch: in a terminal, or in the agent session their watch command gave it (the prompt hook's
     grant). The model never starts one: the command refuses a session without the grant."""
-    inside, sid = claude_session()
+    inside, sid = agent_session()
     if inside and not granted(sid):
-        die("`tracker watch` starts only when the user asks: they run it in a terminal, or type /work-tracker:watch "
-            "<tracker> in a Claude session. Do not start it yourself.", REFUSED)
+        die("`tracker watch` starts only when the user asks: they run it in a terminal, or invoke the watch skill "
+            "in an agent session. Do not start it yourself.", REFUSED)
     if args.name:
         hits, sure = tracker_matches(args.name)
         head = f"'{' '.join(args.name)}' " + ("matches more than one tracker:" if hits and sure else
@@ -791,7 +791,7 @@ def cmd_watch(args):
         found = find_tracker(args)
         hits, sure, head = ([found], True, "") if found else ([], False, "which tracker? trackers:")
     tr = one_tracker(hits, sure, head, "watch")
-    Watcher(tr, sid if inside else "", f"session {claude_name(sid)}" if inside else "terminal").run(args.once)
+    Watcher(tr, sid if inside else "", f"session {session_name(sid)}" if inside else "terminal").run(args.once)
 
 
 def cmd_use(args):
@@ -996,7 +996,7 @@ def build_parser():
     sp.add_argument("--done", metavar="SUMMARY", help="close the ticket: what it delivered")
     sp.add_argument("--pause", metavar="HANDOFF", help="stopping mid-work: what is done, what is half-done and "
                                                        "uncommitted, and the next step")
-    sp = add("start", cmd_start, "tie a tracker to this Claude session, by its slug or words of its title "
+    sp = add("start", cmd_start, "tie a tracker to this agent session, by its slug or words of its title "
                                  "(`start analytics studio`); prints the brief. Lists options when unsure (exit 3). "
                                  "Never changes git")
     sp.add_argument("name", nargs="*", help="the tracker's slug, or words of its slug or title; none: the tracker "
@@ -1016,7 +1016,7 @@ def build_parser():
     sp = add("watch", cmd_watch, "for the user: print each change that may need them, one line per ticket or agent "
                                  "(`!` marks what does), until Ctrl-C: a move that becomes theirs, a step, a decision, "
                                  "a PR event, an agent idle and waiting on them, a `check` error. One watcher per "
-                                 "tracker. In a Claude session it runs only after the user types /work-tracker:watch")
+                                 "tracker. In an agent session it runs only after the user invokes the watch skill")
     sp.add_argument("name", nargs="*", help="the tracker's slug, or words of its slug or title")
     sp.add_argument("--once", action="store_true", help="print the first batch (at the first run: the state now), "
                                                         "then exit")
@@ -1137,4 +1137,3 @@ def main(argv=None):
             args.fn(args)
     except Busy as exc:
         die(str(exc))
-

@@ -54,7 +54,7 @@ class Match:
 
 
 # ---------------------------------------------------------------- sessions
-# `tracker start <name>` ties a tracker to one Claude session; the branch still names the ticket. A session with no
+# `tracker start <name>` ties a tracker to one agent session; the branch still names the ticket. A session with no
 # tracker (and no TRACKER) gets nothing from the hooks. scripts/hook.sh puts the session id in TRACKER_SESSION for
 # the session's Bash commands; hooks get it in their input. Per session, `focus` keeps the tickets `tracker start --on`
 # chose, and `seen` what the brief showed about its tickets, so the prompt hook can say what other sessions or GitHub
@@ -65,17 +65,18 @@ SESSIONS_MAX = 200
 
 
 def session_id() -> str:
-    return os.environ.get("TRACKER_SESSION", "")
+    return (os.environ.get("TRACKER_SESSION") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+            or os.environ.get("CODEX_THREAD_ID") or "")
 
 
 def inside_home(path: str | Path) -> bool:
     return Path(path).resolve().is_relative_to(HOME.resolve())
 
 
-def work_dir() -> Path:
+def work_dir(cwd: str | Path | None = None) -> Path:
     """Where a command works: the cwd; from inside $TRACKER_HOME (a `cd` there to read or edit), the project directory
     the session's hooks last saw, so its branch, marks and handoff still apply."""
-    cwd = Path.cwd()
+    cwd = Path(cwd) if cwd else Path.cwd()
     seen = load_session(session_id()).get("cwd", "") if inside_home(cwd) else ""
     return Path(seen) if seen and Path(seen).is_dir() else cwd
 
@@ -532,15 +533,27 @@ def own_edit(sid: str, m: Match, ident: str) -> None:
 # ---------------------------------------------------------------- live sessions
 # Claude Code keeps one file per running `claude` process: <config dir>/sessions/<pid>.json, with its pid, sessionId,
 # cwd, name, status ("busy" while the model works, "idle" while it waits for the user) and when the status last
-# changed (statusUpdatedAt, epoch ms). It is not a documented format: a file that does not read as one counts as no
-# session, and the viewer then shows none.
+# changed (statusUpdatedAt, epoch ms). Other hosts use the activity recorded by their hooks. An ended session or
+# one with no hook activity for a day does not count. Claude's process files take precedence when available.
 
 CLAUDE_SESSIONS = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser() / "sessions"
+ACTIVITY_MAX_AGE_S = 86400
+
+
+def session_activity(sid: str, status: str) -> None:
+    """Keep a tracked session's hook activity. Preserve when its status last changed."""
+    entry = load_session(sid)
+    if not entry.get("tracker"):
+        return
+    now = time.time()
+    old = entry.get("activity", {})
+    since = old.get("since", now) if old.get("status") == status else now
+    save_session(sid, activity={"status": status, "since": since, "at": now})
 
 
 @dataclass
 class Live:
-    """A Claude session that runs on this machine, tied to a tracker by `tracker start`."""
+    """An agent session with a running process or recent hook activity, tied to a tracker by `tracker start`."""
     sid: str
     name: str
     status: str
@@ -574,20 +587,37 @@ def alive(pid: int) -> bool:
 
 
 def live_sessions(slug: str) -> list[Live]:
-    """The sessions running now that `tracker start` tied to tracker `slug`, by name. A process that stopped without
-    removing its file does not count."""
+    """Tracked sessions with a running process or recent hook activity, by name."""
     worktree.cache_clear()  # the viewer runs for hours: read each worktree's branch again
-    out = []
+    out = {}
+    native = set()
+
+    def add(sid: str, entry: dict, name: str, status: str, since: float, cwd: str = "") -> None:
+        cwd = entry.get("cwd") or cwd
+        out[sid] = Live(sid, name, status, cwd, branch_of(cwd) if cwd and Path(cwd).is_dir() else "",
+                        entry.get("focus", []), since)
+
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
             c = json.loads(f.read_text())
             sid, pid, since = str(c["sessionId"]), int(c["pid"]), float(c.get("statusUpdatedAt") or 0) / 1000
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             continue
+        native.add(sid)
         entry = load_session(sid)
         if entry.get("tracker") != slug or not alive(pid):
             continue
-        cwd = entry.get("cwd") or str(c.get("cwd") or "")
-        out.append(Live(sid, str(c.get("name") or sid[:8]), str(c.get("status") or ""), cwd,
-                        branch_of(cwd) if cwd and Path(cwd).is_dir() else "", entry.get("focus", []), since))
-    return sorted(out, key=lambda s: (s.name, s.sid))
+        add(sid, entry, str(c.get("name") or sid[:8]), str(c.get("status") or ""), since, str(c.get("cwd") or ""))
+    now = time.time()
+    for f in SESSIONS_DIR.glob("*.json"):
+        if f.stem in native:
+            continue
+        entry = load_session(f.stem)
+        try:
+            activity = entry.get("activity", {})
+            status, since, at = activity["status"], float(activity["since"]), float(activity["at"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if entry.get("tracker") == slug and status in ("busy", "idle") and now - at < ACTIVITY_MAX_AGE_S:
+            add(f.stem, entry, f.stem[:8], status, since)
+    return sorted(out.values(), key=lambda s: (s.name, s.sid))

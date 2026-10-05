@@ -1,10 +1,11 @@
-"""Claude Code hooks: scripts/hook.sh runs `run_hook(<event>)` with the hook JSON on stdin, after its shell filters."""
+"""Agent hooks: scripts/hook.sh runs `run_hook(<event>)` with the hook JSON on stdin, after its shell filters."""
 
 from __future__ import annotations
 
 import json
 import os
 import re
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -12,7 +13,8 @@ from pathlib import Path
 from .model import ISOLATION_RULE, SYNC_MIN_INTERVAL_S, append_log, locked, short, spawn, today, Tracker
 from .git import default_branches
 from .session import (behind, branch_matches, changes_since, declined, get_mark, in_repos, inside_home, lag,
-    load_session, match_cwd, own_edit, record_commits, remember, save_session, watch, Lag, Match)
+    load_session, match_cwd, own_edit, record_commits, remember, save_session, session_activity, watch, work_dir,
+    Lag, Match)
 from .views import brief
 from .github import budget, match_pr, sync
 from .watcher import set_grant
@@ -35,8 +37,19 @@ def hook_input() -> dict:
 
 def emit_context(event: str, text: str, notice: str = "") -> None:
     """`text` goes to the model; `notice`, if any, is shown to the user in the transcript."""
+    if event in ("SessionStart", "SubagentStart"):
+        text = "\n".join(x for x in (command_context(), text) if x)
     out = {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}
     print(json.dumps(out | ({"systemMessage": notice} if notice else {})))
+
+
+def command_context() -> str:
+    """Hosts without a shell env file get the CLI path and the hook's authoritative session id in context."""
+    root, sid = os.environ.get("PLUGIN_ROOT"), os.environ.get("TRACKER_SESSION")
+    if not root or not sid or os.environ.get("CLAUDE_ENV_FILE"):
+        return ""
+    command = f"env TRACKER_SESSION={shlex.quote(sid)} {shlex.quote(str(Path(root) / 'bin/tracker'))}"
+    return f"[work-tracker] For every tracker command in this session, use `{command}` as the command prefix."
 
 
 def offer(found: list[Match]) -> tuple[str, str]:
@@ -47,11 +60,11 @@ def offer(found: list[Match]) -> tuple[str, str]:
     options = [f'"Link {m.tracker.slug}" (run `tracker start {m.tracker.slug}`, which prints the brief)'
                for m in found[:3]]
     ask = (f"[work-tracker] This session is on no tracker. Branch `{found[0].branch}` has open tickets in {names}.\n"
-           "In your first reply, before other work, ask the user with AskUserQuestion whether to link this session "
+           "In your first reply, before other work, use the host's question tool to ask whether to link this session "
            f"to it. Options: {', '.join(options)}, and \"Not now\" (run `tracker start --decline`: no offer on this "
            "branch for a day). Skip the question when the user's message already answers it.")
-    return ask, (f"[work-tracker] Branch `{found[0].branch}` has open tickets in {names}. Claude asks at your first "
-                 "message whether to link this session; `/tracker` links it now.")
+    return ask, (f"[work-tracker] Branch `{found[0].branch}` has open tickets in {names}. The agent asks at your first "
+                 "message whether to link this session.")
 
 
 def hook_session_start(data: dict) -> None:
@@ -65,6 +78,8 @@ def hook_session_start(data: dict) -> None:
         found = [] if asked else branch_matches(cwd)
         if found:
             emit_context("SessionStart", *offer(found))
+        elif command_context():
+            emit_context("SessionStart", "")
         return
     changes = sync(m.tracker, force=False)
     m, found = match_pr(match_cwd(cwd, sid), cwd)  # reload after sync
@@ -147,10 +162,15 @@ def hook_edit(data: dict) -> None:
     """hook.sh starts this for a hand edit of a tracker file: count its change as this session's, so the next message
     does not report it as another session's."""
     sid = str(data.get("session_id") or "")
-    m = match_cwd(data.get("cwd") or os.getcwd(), sid)
-    edited = Path((data.get("tool_input") or {}).get("file_path") or "/").resolve()
-    if m and m.focus and edited.is_relative_to(m.tracker.root.resolve()):
-        own_edit(sid, m, edited.stem)
+    cwd = data.get("cwd") or os.getcwd()
+    m = match_cwd(work_dir(cwd), sid)
+    tool = data.get("tool_input") or {}
+    paths = [tool["file_path"]] if tool.get("file_path") else re.findall(
+        r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$", tool.get("command", ""), re.M)
+    for path in paths:
+        edited = (Path(cwd) / path).resolve()
+        if m and m.focus and edited.is_relative_to(m.tracker.root.resolve()):
+            own_edit(sid, m, edited.stem)
 
 
 NUDGE_EVERY = max(1, int(os.environ.get("TRACKER_NUDGE_EVERY", "5")))
@@ -185,7 +205,7 @@ def refresh(m: Match, entry: dict, fields: dict) -> None:
         pass
 
 
-WATCH_PROMPT = re.compile(r"/(?:work-tracker:)?watch\b(.*)", re.S)
+WATCH_PROMPT = re.compile(r"[/$](?:work-tracker:)?watch\b(.*)", re.S)
 
 
 def watch_request(data: dict) -> bool:
@@ -253,7 +273,8 @@ ASSENT = re.compile(r"(yes|no|ok|okay|approved?|reject|cancel|proceed|continue|g
 
 def approval_only(tool_input: dict) -> bool:
     questions = tool_input.get("questions") or []
-    labels = [str(o.get("label", "")).strip() for q in questions for o in q.get("options") or []]
+    labels = [str(o.get("label", "") if isinstance(o, dict) else o).strip()
+              for q in questions for o in q.get("options") or []]
     return bool(labels) and all(ASSENT.match(x) for x in labels)
 
 
@@ -282,7 +303,8 @@ def hook_subagent_start(data: dict) -> None:
                      f"answer: the session records it. {ISOLATION_RULE}")
 
 
-HOOKS = {"session-start": hook_session_start, "stop": hook_stop, "post-bash": hook_post_bash, "edit": hook_edit,
+HOOKS = {"session-start": hook_session_start, "stop": hook_stop, "session-end": hook_stop,
+         "post-bash": hook_post_bash, "edit": hook_edit,
          "prompt": hook_prompt, "answered": hook_answered, "subagent-start": hook_subagent_start}
 
 
@@ -294,7 +316,11 @@ def run_hook(event: str) -> None:
     data = hook_input()
     budget(HOOK_GH_BUDGET_S)
     try:
+        os.environ["TRACKER_SESSION"] = str(data.get("session_id") or "")
         HOOKS[event](data)
+        status = {"session-start": "idle", "prompt": "busy", "stop": "idle", "session-end": "ended"}.get(event)
+        if status and not data.get("agent_id"):
+            session_activity(str(data.get("session_id") or ""), status)
     except (Exception, SystemExit) as exc:  # a hook must never break the session; exit 2 would block it
         print(f"work-tracker hook {event} failed: {exc}", file=sys.stderr)
         sys.exit(0)
