@@ -836,6 +836,17 @@ class SequenceSort(unittest.TestCase):
         self.assertEqual({k: row("T-3")[k] for k in "ogrwu"}, {"o": "2", "g": "", "r": "0", "w": "1", "u": "0"})
         self.assertEqual({k: row("T-4")[k] for k in "ogrwu"}, {"o": "3", "g": "api", "r": "5", "w": "0", "u": "0"})
 
+    def test_an_unknown_status_still_renders(self):
+        """A hand-edited status outside STAGES sorts after them, and the page shows the check's error."""
+        s = slug()
+        run("init", s, "--title", "Work", "--owner", "me")
+        run("--tracker", s, "new", "T-1", "--title", "Odd")
+        path = model.HOME / s / "tickets" / "T-1.md"
+        path.write_text(re.sub(r"^status: .*", "status: wip", path.read_text(), flags=re.M))
+        page = viewer.main_html(model.Tracker(model.HOME / s))
+        self.assertRegex(page, rf'<details data-id="T-1"[^>]* data-r="{len(model.STAGES)}"')
+        self.assertIn("T-1: status &#x27;wip&#x27; not one of", page)
+
 
 class Watch(unittest.TestCase):
     """`tracker watch`: what it reports, that a restart misses nothing and repeats nothing, and that only the user
