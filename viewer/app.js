@@ -15,12 +15,14 @@ const SORTS = {
   step: d => Number(d.dataset.o),
   ticket: d => d.dataset.id,
   priority: d => d.dataset.p === '' ? '' : Number(d.dataset.p),
+  lead: d => d.dataset.l === '' ? '' : Number(d.dataset.l),
   group: d => d.dataset.g,
   status: d => Number(d.dataset.r),
   waits: d => Number(d.dataset.w),
   unblocks: d => Number(d.dataset.u),
 };
 const LABELS = { step: 'dependency order', ticket: 'ticket', group: 'group', status: 'status', priority: 'priority',
+  lead: 'lead time',
   waits: 'waits on', unblocks: 'unblocks' };
 let sort = readSort();
 

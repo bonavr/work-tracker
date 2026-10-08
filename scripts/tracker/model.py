@@ -3,6 +3,7 @@ dependencies, body edits and the write lock. The text format itself is markdown'
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import hashlib
 import json
@@ -58,7 +59,8 @@ KEYS = {
         "pr_state": ("sync", "draft|open|merged|closed, from the PR"),
         "base": ("sync", "the PR's base branch; while the PR is open, a base that is other tickets' branch makes "
                          "this ticket wait on them (computed; depends_on does not change)"),
-        "merged_at": ("sync", "date the PR merged"),
+        "merged_at": ("sync", "when the PR merged, UTC (YYYY-MM-DDTHH:MM:SSZ). A date alone, written before 0.29, "
+                              "stays until `sync` reads the time, which it does when lead time needs it"),
         "priority": ("issue", "the priority the ticket's issue has in its issue tracker, in that tracker's words "
                               "(High, P1, Urgent)"),
         "issue_created": ("issue", "when the ticket's issue was created in its issue tracker, UTC "
@@ -120,6 +122,14 @@ ISSUE_STALE_S = 86400  # an open ticket's issue fields are read again after this
 PRIORITY_RANKS = {"urgent": 0, "highest": 0, "critical": 0, "blocker": 0, "high": 1, "medium": 2, "normal": 2,
                   "low": 3, "lowest": 4, "trivial": 4}
 PRIORITY_UNKNOWN = 9
+
+
+def utc_seconds(text: str) -> float | None:
+    """A `YYYY-MM-DDTHH:MM:SSZ` time as epoch seconds; None for anything else, a date alone included."""
+    try:
+        return calendar.timegm(time.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
 
 
 def priority_rank(text: str) -> int | None:
@@ -673,6 +683,14 @@ class Tracker:
             out[part] = {k: v for k, v in state.get(part, {}).items() if current(part, k, v)}
         out["pr_match"] = {k: v for k, v in state.get("pr_match", {}).items() if now - v.get("at", 0) < PR_MATCH_TTL_S}
         return {k: v for k, v in out.items() if v != {}}
+
+    def lead_time(self, t: Record) -> int | None:
+        """Seconds from when the ticket's issue was created to when its PR merged; None unless both times are exact
+        and the merge came after the issue."""
+        if t.get("pr_state") != "merged" or t.stage == "dropped":
+            return None
+        created, merged = utc_seconds(t.get("issue_created")), utc_seconds(t.get("merged_at"))
+        return int(merged - created) if created is not None and merged is not None and merged >= created else None
 
     def issue_due(self, now: float | None = None) -> list[Record]:
         """The tickets whose issue fields the model should read from their issue tracker (STATE_RULES["issues"])."""

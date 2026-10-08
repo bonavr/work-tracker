@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
+from statistics import median
 
 from .model import (BIN, CLOSED_TICKET, ISOLATION_RULE, STAGES, TEXT_MAX, cut, link_lines, resolution, sequence, short,
-    whose_move, Record, Start, Tracker)
+    utc_seconds, whose_move, Record, Start, Tracker)
 from .session import ago, branch_handoff, cwd_repo, handoff_line, lag, Match
 from .contract import check
 
@@ -312,6 +314,34 @@ BRIEF_TICKETS_MAX = 3  # tickets under way shown in full; the rest get one line 
 BRIEF_CARRY_CHARS = 6000  # the dependencies' Carry forward, about 1.5K tokens
 BRIEF_LINE_CHARS = 200  # a Context, link, log or settled-decision line
 BRIEF_LOG = 2  # log lines per ticket
+LEAD_RECENT_S = 7 * 86400  # the lead time line's recent window
+
+
+def duration(seconds: float) -> str:
+    """`42 min` under an hour, `26 h` under two days, then `2.4 d`."""
+    if seconds < 3600:
+        return f"{max(1, int(seconds // 60))} min"
+    if seconds < 48 * 3600:
+        return f"{int(seconds // 3600)} h"
+    return f"{seconds / 86400:.1f} d"
+
+
+def lead_line(tr: Tracker, now: float | None = None) -> str:
+    """The tracker's lead time, from issue created to PR merged: the median, the fastest ticket, and the median of the
+    merges in the last 7 days. Empty when no ticket has one."""
+    leads = [(t, lead) for t in tr.tickets if (lead := tr.lead_time(t)) is not None]
+    if not leads:
+        return ""
+    now = time.time() if now is None else now
+    fastest = min(leads, key=lambda x: x[1])
+    parts = [f"Lead time (issue created → PR merged): median {duration(median(x for _, x in leads))} over "
+             f"{len(leads)}", f"fastest {duration(fastest[1])} ({fastest[0].id})"]
+    recent = [x for t, x in leads if now - (utc_seconds(t.get("merged_at")) or 0) <= LEAD_RECENT_S]
+    if recent:
+        parts.append(f"last 7 days: median {duration(median(recent))} over {len(recent)}")
+    return " · ".join(parts)
+
+
 ISSUE_DUE_SHOWN = 10  # due tickets named in the request for their issue fields; the rest as a count
 
 

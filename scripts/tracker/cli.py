@@ -22,8 +22,8 @@ from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_sess
     load_session, locate, mark_up_to_date, match_cwd, on_branch, record_commits, remember, resolve, save_session,
     session_id, session_tracker, trackers_for_repo, watch, work_dir)
 from .contract import check, migrate, rules_lines
-from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, brief, context_lines, dep_lines, index_lines, order_lines,
-    start_text)
+from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, brief, context_lines, dep_lines, index_lines, lead_line,
+    order_lines, start_text)
 from .github import match_pr, sync
 from .watcher import REFUSED, Watcher, agent_session, granted, session_name, watching
 
@@ -77,7 +77,9 @@ def cmd_index(args):
         die(f"--status takes {'|'.join(STAGES)}")
     if args.active:
         stages = set(STAGES) - CLOSED_TICKET
-    print("\n".join(index_lines(tr, stages, args.group)))
+    lines = index_lines(tr, stages, args.group)
+    lead = lead_line(tr)
+    print("\n".join(lines[:1] + [lead] * bool(lead) + lines[1:]))
 
 
 def cmd_here(args):

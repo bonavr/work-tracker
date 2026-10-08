@@ -21,7 +21,7 @@ from .model import (CLI, CLOSED_TICKET, EVIDENCE_DIR, HOME, IN_FLIGHT, LIST_KEYS
     sort_key, spawn, tracker_at, whose_move, Dep, Move, Record, Tracker)
 from .session import ago, live_sessions, match_cwd, Live
 from .contract import check
-from .views import pr_label, stage_counts, start_text
+from .views import duration, lead_line, pr_label, stage_counts, start_text
 from .github import sync
 from .watcher import watcher_of
 
@@ -278,8 +278,8 @@ def main_html(tr: Tracker) -> str:
     def ticket_row(t: Record, order: int) -> str:
         """A row of the sequence, which opens to the whole ticket. A ready ticket shows `ready` for its `todo`.
         Its data-* carry what the page sorts it by (viewer/app.js): `o` its place in the dependency order, `g` its
-        group, `r` its status's place in STAGES, `p` its priority's rank (most urgent 0, none empty), `w` and `u` how
-        many it waits on and unblocks."""
+        group, `r` its status's place in STAGES, `p` its priority's rank (most urgent 0, none empty), `l` its lead time
+        in seconds (none empty), `w` and `u` how many it waits on and unblocks."""
         closed = t.stage in CLOSED_TICKET
         tag, gate_chip = gate_html(t)
         cls = " closed" if closed else " s-stack" if tr.stackable(t) else " s-blocked" if tr.blockers(t) else ""
@@ -287,6 +287,7 @@ def main_html(tr: Tracker) -> str:
         pr = f' <span class=meta>PR {e(pr_label(t))}</span>' if t.get("pr") else ""
         word, line = ("summary", t.get("summary")) if closed else ("next", t.get("next"))
         lead = (word, md_inline(str(line))) if line else None
+        lead_s = tr.lead_time(t)
         step = seq.step.get(t.id, "")
         cells = (f'<span>{step}</span>'
                  f'<span class="tk tone" title="{e(t.id)} {e(title)}"><span class=id>{e(t.id)}</span> '
@@ -294,10 +295,12 @@ def main_html(tr: Tracker) -> str:
                  f'<span>{e(str(t.get("group", "")))}</span>'
                  f'<span>{gate_chip if tag == "ready" else chip(t.stage)}</span>'
                  f'<span>{e(str(t.get("priority", "")))}</span>'
+                 f'<span>{"" if lead_s is None else duration(lead_s)}</span>'
                  f'{list_cell(waits_items(t))}{list_cell(unblocks_items(t))}')
         rank = priority_rank(str(t.get("priority", "")))
         sort = (f'data-o="{order}" data-g="{e(str(t.get("group", "")))}" data-r="{STAGES.index(t.stage)}" '
-                f'data-p="{"" if rank is None else rank}" data-w="{len(waits_items(t))}" '
+                f'data-p="{"" if rank is None else rank}" data-l="{"" if lead_s is None else lead_s}" '
+                f'data-w="{len(waits_items(t))}" '
                 f'data-u="{len(unblocks_items(t))}"')
         return panel(t.id, cells, body_html(t, lead), attrs=f' class="t{cls}" data-s="{e(t.stage)}" '
                      f'data-c="{int(closed)}" data-b="{tag}" data-step="{step}" {sort}')
@@ -370,7 +373,7 @@ def main_html(tr: Tracker) -> str:
         return min(26, max([least, *(len(x) + 1 for x in texts)]))
 
     cols = (f"{width([str(t.get('group', '')) for t in ordered], 6)}ch 12ch "
-            f"{width([str(t.get('priority', '')) for t in ordered], 9)}ch "
+            f"{width([str(t.get('priority', '')) for t in ordered], 9)}ch 10ch "
             f"{width([fit(waits_items(t))[1] for t in ordered], 10)}ch "
             f"{width([fit(unblocks_items(t))[1] for t in ordered], 10)}ch")
     n = {"all": len(tr.tickets), "active": sum(1 for t in tr.tickets if t.stage not in CLOSED_TICKET),
@@ -381,10 +384,12 @@ def main_html(tr: Tracker) -> str:
     # Each heading sorts the rows by its column in the page; Step puts back the dependency order.
     head = "".join(f'<span><button type=button data-sort="{key}">{label}</button></span>'
                    for key, label in (("step", "Step"), ("ticket", "Ticket"), ("group", "Group"),
-                                      ("status", "Status"), ("priority", "Priority"), ("waits", "Waits on"),
-                                      ("unblocks", "Unblocks")))
+                                      ("status", "Status"), ("priority", "Priority"), ("lead", "Lead time"),
+                                      ("waits", "Waits on"), ("unblocks", "Unblocks")))
+    lead = lead_line(tr)
     sequence_html = sec("seq", "Sequence", f"{n['active']} open of {n['all']}",
-                        f'<div class=filters>{filters}</div><p class=sr-only aria-live=polite id=sort-said></p>'
+                        (f"<p class=lead>{e(lead)}</p>" if lead else "")
+                        + f'<div class=filters>{filters}</div><p class=sr-only aria-live=polite id=sort-said></p>'
                         f'<div class=seq style="--cols: {cols}"><div class=seq-head>{head}</div>'
                         + "".join(ticket_row(t, i) for i, t in enumerate(ordered)) + "</div>", True)
 

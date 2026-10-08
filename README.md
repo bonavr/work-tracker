@@ -24,7 +24,7 @@ Talk to the agent. It runs the `tracker` CLI for you.
 | Command | Does |
 |---|---|
 | `tracker list` | all trackers |
-| `tracker index --active` | the tickets under way, whose move each waits on, the open decisions |
+| `tracker index --active` | the tickets under way, whose move each waits on, the open decisions; under the headline, the lead time line |
 | `tracker ready` | what can start now, and from which branch |
 | `tracker context <id>` | one ticket or decision in full, with what it builds on |
 | `tracker decisions --all` | the decisions, open and settled |
@@ -97,6 +97,7 @@ Each hook runs `scripts/hook.sh`, which filters the event in shell first. In a s
 - `tracker open [id]` starts a local server (Python `http.server`, 127.0.0.1 only) when none runs, and opens the page. The page polls every 3 s and updates in place. The server stops about 3 min after the last request.
 - **Now** shows the tickets under way (your move first), each branch's handoff, and the agent sessions on this machine that work on the tracker (a ring spins while one works).
 - While a page is open, the server syncs PR state every 2 min.
+- **Lead time** is from when a ticket's issue was created (its `issue_created`) to when its PR merged. Above the filters, one line gives the median, the fastest ticket, and the median of the last 7 days' merges; the Lead time column gives each merged ticket's. A ticket without both exact times has none: a merge synced before 0.29 is known only by its date until `sync` reads its time, which it does for tickets whose issue time is known.
 - **Refresh** (top right, beside the live line) pulls PR state from GitHub at once and asks the agent, at your next message in a session on the tracker, to read the due issue fields. The live line says when issue fields were last read, or that a Refresh waits for a session, or that no session is open on the tracker.
 - **Sequence** lists the tickets in dependency order. The Priority column shows each ticket's issue priority and sorts most urgent first (Urgent, Highest and P0 first; an unknown word after the known ones). A column heading sorts by that column and a second press reverses it; tickets with no value in that column go last, and ties keep the dependency order. Step puts the dependency order back. The sort is kept in the address (`?sort=group`, `?sort=-group`), so a reload or a shared link keeps it.
 - The session list uses hook activity: a user prompt marks a tracked session busy, Stop marks it idle, and SessionEnd marks it ended. Activity expires after a day without events. This shows the last reported state; an interrupted turn can remain busy until the next event. Claude Code's `~/.claude/sessions/*.json` (`CLAUDE_CONFIG_DIR` when set) supplies process liveness and names when available. Codex needs no session-file parser.
