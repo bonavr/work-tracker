@@ -806,6 +806,48 @@ class Hooks(unittest.TestCase):
         self.assertIn("[B-2] Built part 2", (tr.root / "log.md").read_text())
 
 
+class SequenceSort(unittest.TestCase):
+    """The viewer's sequence sorts by any column in the page (viewer/app.js); the server gives each row the values it
+    sorts on and each column a sort button."""
+
+    def test_rows_carry_their_sort_values(self):
+        s = slug()
+        t = ("--tracker", s)
+        run("init", s, "--title", "Work", "--owner", "me")
+        run(*t, "new", "T-10", "--title", "Late", "--group", "ui")
+        run(*t, "new", "T-2", "--title", "Base", "--group", "api")
+        run(*t, "new", "T-3", "--title", "Uses base", "--depends", "T-2")
+        run(*t, "new", "T-4", "--title", "Gone", "--group", "api")
+        run(*t, "set", "T-4", "status=dropped", "summary=not needed")
+        page = viewer.main_html(model.Tracker(model.HOME / s))
+
+        head = re.search(r"<div class=seq-head>(.*?)</div>", page).group(1)
+        self.assertEqual(re.findall(r'<button type=button data-sort="(\w+)">([^<]+)</button>', head),
+                         [("step", "Step"), ("ticket", "Ticket"), ("group", "Group"), ("status", "Status"),
+                          ("waits", "Waits on"), ("unblocks", "Unblocks")])
+
+        def row(ident: str) -> dict[str, str]:
+            attrs = re.search(rf'<details data-id="{ident}"([^>]*)>', page).group(1)
+            return dict(re.findall(r'data-(\w+)="([^"]*)"', attrs))
+
+        # o: the dependency order the page starts in (dropped last); r: the status's place in todo → dropped.
+        self.assertEqual({k: row("T-2")[k] for k in "ogrwu"}, {"o": "0", "g": "api", "r": "0", "w": "0", "u": "1"})
+        self.assertEqual({k: row("T-10")[k] for k in "ogrwu"}, {"o": "1", "g": "ui", "r": "0", "w": "0", "u": "0"})
+        self.assertEqual({k: row("T-3")[k] for k in "ogrwu"}, {"o": "2", "g": "", "r": "0", "w": "1", "u": "0"})
+        self.assertEqual({k: row("T-4")[k] for k in "ogrwu"}, {"o": "3", "g": "api", "r": "5", "w": "0", "u": "0"})
+
+    def test_an_unknown_status_still_renders(self):
+        """A hand-edited status outside STAGES sorts after them, and the page shows the check's error."""
+        s = slug()
+        run("init", s, "--title", "Work", "--owner", "me")
+        run("--tracker", s, "new", "T-1", "--title", "Odd")
+        path = model.HOME / s / "tickets" / "T-1.md"
+        path.write_text(re.sub(r"^status: .*", "status: wip", path.read_text(), flags=re.M))
+        page = viewer.main_html(model.Tracker(model.HOME / s))
+        self.assertRegex(page, rf'<details data-id="T-1"[^>]* data-r="{len(model.STAGES)}"')
+        self.assertIn("T-1: status &#x27;wip&#x27; not one of", page)
+
+
 class Watch(unittest.TestCase):
     """`tracker watch`: what it reports, that a restart misses nothing and repeats nothing, and that only the user
     starts it."""

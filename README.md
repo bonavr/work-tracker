@@ -95,6 +95,7 @@ Each hook runs `scripts/hook.sh`, which filters the event in shell first. In a s
 - `tracker open [id]` starts a local server (Python `http.server`, 127.0.0.1 only) when none runs, and opens the page. The page polls every 3 s and updates in place. The server stops about 3 min after the last request.
 - **Now** shows the tickets under way (your move first), each branch's handoff, and the agent sessions on this machine that work on the tracker (a ring spins while one works).
 - While a page is open, the server syncs PR state every 2 min.
+- **Sequence** lists the tickets in dependency order. A column heading sorts by that column and a second press reverses it; Waits on and Unblocks sort by count, tickets with no group go last, and ties keep the dependency order. Step puts the dependency order back. The sort is kept in the address (`?sort=group`, `?sort=-group`), so a reload or a shared link keeps it.
 - The session list uses hook activity: a user prompt marks a tracked session busy, Stop marks it idle, and SessionEnd marks it ended. Activity expires after a day without events. This shows the last reported state; an interrupted turn can remain busy until the next event. Claude Code's `~/.claude/sessions/*.json` (`CLAUDE_CONFIG_DIR` when set) supplies process liveness and names when available. Codex needs no session-file parser.
 
 ### Watch

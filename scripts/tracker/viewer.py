@@ -273,8 +273,11 @@ def main_html(tr: Tracker) -> str:
         return (f'<span class=deps title="{e(", ".join(text for text, _ in items))}">'
                 f'{", ".join(h for _, h in items[:k])}{more}</span>')
 
-    def ticket_row(t: Record) -> str:
-        """A row of the sequence, which opens to the whole ticket. A ready ticket shows `ready` for its `todo`."""
+    def ticket_row(t: Record, order: int) -> str:
+        """A row of the sequence, which opens to the whole ticket. A ready ticket shows `ready` for its `todo`.
+        Its data-* carry what the page sorts it by (viewer/app.js): `o` its place in the dependency order, `g` its
+        group, `r` its status's place in STAGES (an unknown status after them, so the page still renders and shows the
+        check's error), `w` and `u` how many it waits on and unblocks."""
         closed = t.stage in CLOSED_TICKET
         tag, gate_chip = gate_html(t)
         cls = " closed" if closed else " s-stack" if tr.stackable(t) else " s-blocked" if tr.blockers(t) else ""
@@ -289,8 +292,11 @@ def main_html(tr: Tracker) -> str:
                  f'<span>{e(str(t.get("group", "")))}</span>'
                  f'<span>{gate_chip if tag == "ready" else chip(t.stage)}</span>'
                  f'{list_cell(waits_items(t))}{list_cell(unblocks_items(t))}')
+        rank = STAGES.index(t.stage) if t.stage in STAGES else len(STAGES)
+        sort = (f'data-o="{order}" data-g="{e(str(t.get("group", "")))}" data-r="{rank}" '
+                f'data-w="{len(waits_items(t))}" data-u="{len(unblocks_items(t))}"')
         return panel(t.id, cells, body_html(t, lead), attrs=f' class="t{cls}" data-s="{e(t.stage)}" '
-                     f'data-c="{int(closed)}" data-b="{tag}" data-step="{step}"')
+                     f'data-c="{int(closed)}" data-b="{tag}" data-step="{step}" {sort}')
 
     def now_item(key: str, head: str, line: str, more: str = "", attrs: str = "") -> str:
         """A Now entry: its head and the start of its line; it opens to the whole line and `more`."""
@@ -367,11 +373,14 @@ def main_html(tr: Tracker) -> str:
          "blocked": sum(1 for t in tr.tickets if t.stage not in CLOSED_TICKET and tr.blockers(t)), **counts}
     filters = "".join(f'<button data-f="{f}">{f} <span class=n>{n[f]}</span></button>'
                       for f in ["all", "active", "ready", "blocked", *[s for s in STAGES if s in counts]])
+    # Each heading sorts the rows by its column in the page; Step puts back the dependency order.
+    head = "".join(f'<span><button type=button data-sort="{key}">{label}</button></span>'
+                   for key, label in (("step", "Step"), ("ticket", "Ticket"), ("group", "Group"),
+                                      ("status", "Status"), ("waits", "Waits on"), ("unblocks", "Unblocks")))
     sequence_html = sec("seq", "Sequence", f"{n['active']} open of {n['all']}",
-                        f'<div class=filters>{filters}</div><div class=seq style="--cols: {cols}">'
-                        '<div class=seq-head><span>Step</span><span>Ticket</span><span>Group</span><span>Status</span>'
-                        '<span>Waits on</span><span>Unblocks</span></div>'
-                        + "".join(ticket_row(t) for t in ordered) + "</div>", True)
+                        f'<div class=filters>{filters}</div><p class=sr-only aria-live=polite id=sort-said></p>'
+                        f'<div class=seq style="--cols: {cols}"><div class=seq-head>{head}</div>'
+                        + "".join(ticket_row(t, i) for i, t in enumerate(ordered)) + "</div>", True)
 
     open_ds = tr.open_decisions()
     open_d = "".join(decision_html(d) for d in open_ds) or "<p class=meta>None.</p>"
