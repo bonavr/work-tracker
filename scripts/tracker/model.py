@@ -129,7 +129,7 @@ SPANS = {"wait": ("issue_created", "started_at", "issue created → started"),
          "cycle": ("started_at", "merged_at", "started → PR merged")}
 
 
-def utc_seconds(text: str) -> float | None:
+def utc_seconds(text: str) -> int | None:
     """A `YYYY-MM-DDTHH:MM:SSZ` time as epoch seconds; None for anything else, a date alone included."""
     try:
         return calendar.timegm(time.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ"))

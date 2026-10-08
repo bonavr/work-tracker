@@ -1,6 +1,6 @@
 #!/bin/sh
 . "$(dirname "$0")/../lib/demo-tracker.sh"
-# Three finished tickets with exact times: wait times 1.0 d, 3.0 d and 5.0 d (median 3.0 d), cycle times 6 h, 2.0 d
+# Three finished tickets with exact times: wait times 24 h, 3.0 d and 5.0 d (median 3.0 d), cycle times 6 h, 2.0 d
 # and 12 h (median 12 h).
 for n in 4 5 6; do
   tracker new "DEMO-$n" --title "Shipped part $n"

@@ -179,8 +179,9 @@ def cmd_set(args):
     if rec.kind == "ticket" and updates.get("status") == "in-progress":
         if "branch" not in updates:
             notes += start_here(tr, rec, updates)
-        if not rec.get("started_at"):
-            updates["started_at"] = utc_now()  # the first start: a cycle time runs from it
+        # The first start, from todo: a cycle time runs from it. A ticket started before 0.29 gets none, not a guess.
+        if not rec.get("started_at") and rec.get("status") == "todo":
+            updates["started_at"] = utc_now()
     if rec.kind != "tracker":
         updates["updated"] = today()
     blocked = {t.id for t in tr.tickets if tr.blockers(t)}

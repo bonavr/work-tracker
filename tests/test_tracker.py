@@ -1025,6 +1025,12 @@ class Spans(unittest.TestCase):
         run(*t, "set", "S-1", "status=in-progress")  # started again: the first start stays
         self.assertEqual(model.Tracker(model.HOME / s).lookup("S-1").get("started_at"), "2026-09-01T00:00:00Z")
         self.assertIn("the tracker writes it", run(*t, "set", "S-1", "started_at=2026-09-02T00:00:00Z", code=2))
+        # Started before 0.29, so in progress with no start: set in progress again, it gets none rather than now
+        run(*t, "new", "S-2", "--title", "Started earlier", "--branch", "f2")
+        path = model.HOME / s / "tickets" / "S-2.md"
+        path.write_text(re.sub(r"^status: .*", "status: in-progress", path.read_text(), flags=re.M))
+        run(*t, "set", "S-2", "status=in-progress")
+        self.assertEqual(model.Tracker(model.HOME / s).lookup("S-2").get("started_at"), "")
 
     def test_sync_keeps_the_merge_time(self):
         s = slug()

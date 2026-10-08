@@ -318,7 +318,7 @@ SPAN_RECENT_S = 7 * 86400  # a span line's recent window
 
 
 def duration(seconds: float) -> str:
-    """`42 min` under an hour, `26 h` under two days, then `2.4 d`."""
+    """`42 min` under an hour (`1 min` at least), `26 h` under two days, then `2.4 d`."""
     if seconds < 3600:
         return f"{max(1, int(seconds // 60))} min"
     if seconds < 48 * 3600:
