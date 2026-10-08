@@ -30,7 +30,9 @@ let sort = readSort();
 function readSort() {
   const raw = new URLSearchParams(location.search).get('sort') || '';
   const key = raw.replace(/^-/, '');
-  return SORTS[key] && key !== 'step' ? { key, desc: raw.startsWith('-') } : { key: 'step', desc: false };
+  // Own keys only: `?sort=constructor` would find Object's and break the page.
+  return Object.hasOwn(SORTS, key) && key !== 'step' ? { key, desc: raw.startsWith('-') }
+    : { key: 'step', desc: false };
 }
 
 // Rows with no value (no group) go last in either direction; equal values keep the dependency order.

@@ -278,8 +278,9 @@ def main_html(tr: Tracker) -> str:
     def ticket_row(t: Record, order: int) -> str:
         """A row of the sequence, which opens to the whole ticket. A ready ticket shows `ready` for its `todo`.
         Its data-* carry what the page sorts it by (viewer/app.js): `o` its place in the dependency order, `g` its
-        group, `r` its status's place in STAGES, `p` its priority's rank (most urgent 0, none empty), `sw` and `sc`
-        its wait and cycle times in seconds (none empty), `w` and `u` how many it waits on and unblocks."""
+        group, `r` its status's place in STAGES (an unknown status after them, so the page still renders and shows the
+        check's error), `p` its priority's rank (most urgent 0, none empty), `sw` and `sc` its wait and cycle times in
+        seconds (none empty), `w` and `u` how many it waits on and unblocks."""
         closed = t.stage in CLOSED_TICKET
         tag, gate_chip = gate_html(t)
         cls = " closed" if closed else " s-stack" if tr.stackable(t) else " s-blocked" if tr.blockers(t) else ""
@@ -297,8 +298,9 @@ def main_html(tr: Tracker) -> str:
                  f'<span>{e(str(t.get("priority", "")))}</span>'
                  + "".join(f'<span>{"" if x is None else duration(x)}</span>' for x in spans.values())
                  + f'{list_cell(waits_items(t))}{list_cell(unblocks_items(t))}')
+        status = STAGES.index(t.stage) if t.stage in STAGES else len(STAGES)
         rank = priority_rank(str(t.get("priority", "")))
-        sort = (f'data-o="{order}" data-g="{e(str(t.get("group", "")))}" data-r="{STAGES.index(t.stage)}" '
+        sort = (f'data-o="{order}" data-g="{e(str(t.get("group", "")))}" data-r="{status}" '
                 f'data-p="{"" if rank is None else rank}" '
                 + "".join(f'data-s{name[0]}="{"" if x is None else x}" ' for name, x in spans.items())
                 + f'data-w="{len(waits_items(t))}" '
