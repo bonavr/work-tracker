@@ -828,8 +828,8 @@ class SequenceSort(unittest.TestCase):
         head = re.search(r"<div class=seq-head>(.*?)</div>", page).group(1)
         self.assertEqual(re.findall(r'<button type=button data-sort="(\w+)">([^<]+)</button>', head),
                          [("step", "Step"), ("ticket", "Ticket"), ("group", "Group"), ("status", "Status"),
-                          ("priority", "Priority"), ("lead", "Lead time"), ("waits", "Waits on"),
-                          ("unblocks", "Unblocks")])
+                          ("priority", "Priority"), ("wait", "Wait time"), ("cycle", "Cycle time"),
+                          ("waits", "Waits on"), ("unblocks", "Unblocks")])
 
         def row(ident: str) -> dict[str, str]:
             attrs = re.search(rf'<details data-id="{ident}"([^>]*)>', page).group(1)
@@ -935,7 +935,7 @@ class IssueFields(unittest.TestCase):
         page = viewer.main_html(model.Tracker(model.HOME / s))
         head = re.search(r"<div class=seq-head>(.*?)</div>", page).group(1)
         self.assertEqual(re.findall(r'data-sort="(\w+)"', head),
-                         ["step", "ticket", "group", "status", "priority", "lead", "waits", "unblocks"])
+                         ["step", "ticket", "group", "status", "priority", "wait", "cycle", "waits", "unblocks"])
 
         def p(ident: str) -> str:
             return re.search(rf'<details data-id="{ident}"[^>]* data-p="([^"]*)"', page).group(1)
@@ -985,102 +985,111 @@ class IssueFields(unittest.TestCase):
         self.assertGreater(model.Tracker(model.HOME / s).raw_state()["issues"]["requested"], time.time() - 60)
 
 
-class LeadTime(unittest.TestCase):
-    """Lead time: from when a ticket's issue was created to when its PR merged. Both times are exact (UTC to the
-    second); a ticket with either missing, or a merge known only by its date, has none."""
+class Spans(unittest.TestCase):
+    """A ticket's spans: wait (issue created → started) and cycle (started → PR merged). The tracker records the start
+    itself, so cycle time needs no issue tracker. Each needs both times exact (UTC to the second) and in order."""
 
-    def ticket(self, s: str, ident: str, created: str = "", merged: str = "", status: str = "done") -> None:
+    def ticket(self, s: str, ident: str, created: str = "", started: str = "", merged: str = "",
+               status: str = "done") -> None:
         t = ("--tracker", s)
         run(*t, "new", ident, "--title", f"Work {ident}", "--branch", f"f-{ident}")
-        run(*t, "add", ident, "link", f"Issue: [SC-{ident} Story](https://issues.example/{ident})")
         if created:
+            run(*t, "add", ident, "link", f"Issue: [SC-{ident} Story](https://issues.example/{ident})")
             run(*t, "issue", ident, "--created", created)
         rec = model.Tracker(model.HOME / s).lookup(ident)
-        rec.save({"status": status, **({"pr": "9", "pr_state": "merged", "merged_at": merged} if merged else {})})
+        rec.save({"status": status, **({"started_at": started} if started else {}),
+                  **({"pr": "9", "pr_state": "merged", "merged_at": merged} if merged else {})})
 
-    def test_sync_keeps_the_merge_time_and_reads_it_for_an_older_merge(self):
+    def test_set_records_the_first_start(self):
+        s = slug()
+        t = ("--tracker", s)
+        run("init", s, "--title", "Timed", "--owner", "me")
+        run(*t, "new", "S-1", "--title", "Starts", "--branch", "f1")
+        out = run(*t, "set", "S-1", "status=in-progress")
+        self.assertNotIn("started_at", out)
+        first = model.Tracker(model.HOME / s).lookup("S-1").get("started_at")
+        self.assertLessEqual(abs(model.utc_seconds(first) - time.time()), 5)
+        model.Tracker(model.HOME / s).lookup("S-1").save({"started_at": "2026-09-01T00:00:00Z"})
+        run(*t, "set", "S-1", "status=todo")
+        run(*t, "set", "S-1", "status=in-progress")  # started again: the first start stays
+        self.assertEqual(model.Tracker(model.HOME / s).lookup("S-1").get("started_at"), "2026-09-01T00:00:00Z")
+        self.assertIn("the tracker writes it", run(*t, "set", "S-1", "started_at=2026-09-02T00:00:00Z", code=2))
+
+    def test_sync_keeps_the_merge_time(self):
         s = slug()
         t = ("--tracker", s)
         run("init", s, "--title", "Timed", "--owner", "me", "--repo", "a/x")
-        run(*t, "new", "L-1", "--title", "Merging now", "--branch", "f1")
-        run(*t, "set", "L-1", "status=in-progress")
-        self.ticket(s, "L-2", created="2026-09-18T00:00:00Z", merged="2026-09-20")  # merged before this version
-        self.ticket(s, "L-3", merged="2026-09-21")  # no issue time: its merge time would not be used
+        run(*t, "new", "S-1", "--title", "Merging now", "--branch", "f1")
+        run(*t, "set", "S-1", "status=in-progress")
         lists = [{"number": 11, "headRefName": "f1", "state": "MERGED", "isDraft": False,
                   "mergedAt": "2026-10-01T06:30:00Z", "baseRefName": "main", "updatedAt": ""}]
-        viewed = []
-
-        def fake_gh(*args, fields=None, partial=False):
-            if args[:2] == ("pr", "list"):
-                return lists
-            if args[:2] == ("pr", "view"):
-                viewed.append(args[2])
-                return {"number": 9, "headRefName": "f-L-2", "state": "MERGED", "isDraft": False,
-                        "mergedAt": "2026-09-20T03:00:00Z", "baseRefName": "main", "updatedAt": ""}
-            return {"data": {}}
-
-        with mock.patch.object(github, "gh", fake_gh):
+        with mock.patch.object(github, "gh", lambda *args, fields=None, partial=False:
+                               lists if args[:2] == ("pr", "list") else {"data": {}}):
             run(*t, "sync")
-        tr = model.Tracker(model.HOME / s)
-        self.assertEqual(tr.lookup("L-1").get("merged_at"), "2026-10-01T06:30:00Z")
-        self.assertEqual(tr.lookup("L-2").get("merged_at"), "2026-09-20T03:00:00Z")
-        self.assertEqual(tr.lookup("L-3").get("merged_at"), "2026-09-21")
-        self.assertEqual(viewed, ["9"])  # only the merge whose time lead time needs
-        self.assertNotIn("L-2", "".join(x for x in (tr.root / "log.md").read_text().splitlines() if "merged" in x))
+        self.assertEqual(model.Tracker(model.HOME / s).lookup("S-1").get("merged_at"), "2026-10-01T06:30:00Z")
 
-    def test_the_lead_time_line(self):
+    def test_the_span_lines(self):
         s = slug()
         run("init", s, "--title", "Timed", "--owner", "me")
-        self.ticket(s, "L-1", "2026-09-01T00:00:00Z", "2026-09-01T06:00:00Z")  # 6 h
-        self.ticket(s, "L-2", "2026-09-02T00:00:00Z", "2026-09-04T00:00:00Z")  # 2.0 d
-        self.ticket(s, "L-3", "2026-10-01T00:00:00Z", "2026-10-01T12:00:00Z")  # 12 h, in the last 7 days
-        self.ticket(s, "L-4", "2026-10-02T00:00:00Z", "2026-10-02T00:30:00Z")  # 30 min, in the last 7 days
-        self.ticket(s, "L-5", "2026-09-01T00:00:00Z", "2026-09-03")  # merged, by date only: none
-        self.ticket(s, "L-6", merged="2026-09-03T00:00:00Z")  # no issue time: none
-        self.ticket(s, "L-7", "2026-09-01T00:00:00Z", status="todo")  # not merged: none
-        self.ticket(s, "L-8", "2026-09-28T00:00:00Z", "2026-09-29T00:00:00Z")  # 24 h, merged exactly 7 days ago
-        self.ticket(s, "L-9", "2026-09-10T00:00:00Z", "2026-09-09T00:00:00Z")  # issue made after the merge: none
-        self.ticket(s, "L-10", "2026-09-01T00:00:00Z", "2026-09-01T01:00:00Z", status="dropped")  # dropped: none
+        self.ticket(s, "S-1", "2026-09-01T00:00:00Z", "2026-09-01T02:00:00Z", "2026-09-01T08:00:00Z")
+        self.ticket(s, "S-2", "2026-09-02T00:00:00Z", "2026-09-03T00:00:00Z", "2026-09-05T00:00:00Z")
+        self.ticket(s, "S-3", "2026-10-01T00:00:00Z", "2026-10-01T00:10:00Z", "2026-10-01T12:10:00Z")  # recent
+        self.ticket(s, "S-4", started="2026-10-02T00:00:00Z", merged="2026-10-02T00:30:00Z")  # no issue: cycle only
+        # S-5 started exactly 7 days ago and merged by date only; S-7's issue was made after its start; S-9 merged
+        # before its start
+        self.ticket(s, "S-5", "2026-09-01T00:00:00Z", "2026-09-29T00:00:00Z", "2026-09-30")
+        self.ticket(s, "S-6", "2026-09-20T00:00:00Z", "2026-09-21T00:00:00Z", status="in-progress")  # not merged
+        self.ticket(s, "S-7", "2026-09-10T00:00:00Z", "2026-09-09T00:00:00Z", "2026-09-11T00:00:00Z")
+        self.ticket(s, "S-8", "2026-09-01T00:00:00Z", "2026-09-01T01:00:00Z", "2026-09-01T02:00:00Z",
+                    status="dropped")
+        self.ticket(s, "S-9", "2026-09-01T00:00:00Z", "2026-09-10T00:00:00Z", "2026-09-09T00:00:00Z")
         tr = model.Tracker(model.HOME / s)
+        h, d = 3600, 86400
+        self.assertEqual({t.id: (model.span(t, "wait"), model.span(t, "cycle")) for t in tr.tickets},
+                         {"S-1": (2 * h, 6 * h), "S-2": (d, 2 * d), "S-3": (600, 12 * h), "S-4": (None, 1800),
+                          "S-5": (28 * d, None), "S-6": (d, None), "S-7": (None, 2 * d), "S-8": (None, None),
+                          "S-9": (9 * d, None)})
         now = model.utc_seconds("2026-10-06T00:00:00Z")
-        self.assertEqual({t.id: tr.lead_time(t) for t in tr.tickets},
-                         {"L-1": 6 * 3600, "L-2": 48 * 3600, "L-3": 12 * 3600, "L-4": 1800, "L-5": None, "L-6": None,
-                          "L-7": None, "L-8": 24 * 3600, "L-9": None, "L-10": None})
-        self.assertEqual(views.lead_line(tr, now), "Lead time (issue created → PR merged): median 12 h over 5 · "
-                                                   "fastest 30 min (L-4) · last 7 days: median 12 h over 3")
-        self.assertEqual(views.lead_line(tr, now + 30 * 86400), "Lead time (issue created → PR merged): median "
-                                                                "12 h over 5 · fastest 30 min (L-4)")
+        self.assertEqual(views.span_lines(tr, now), [
+            "Wait time (issue created → started): median 24 h over 6 · fastest 10 min (S-3) · last 7 days: median "
+            "14.0 d over 2",
+            "Cycle time (started → PR merged): median 12 h over 5 · fastest 30 min (S-4) · last 7 days: median 6 h "
+            "over 2"])
+        self.assertEqual(views.span_lines(tr, now + 30 * d), [
+            "Wait time (issue created → started): median 24 h over 6 · fastest 10 min (S-3)",
+            "Cycle time (started → PR merged): median 12 h over 5 · fastest 30 min (S-4)"])
         empty = slug()
         run("init", empty, "--title", "Untimed", "--owner", "me")
-        self.assertEqual(views.lead_line(model.Tracker(model.HOME / empty), now), "")
+        self.assertEqual(views.span_lines(model.Tracker(model.HOME / empty), now), [])
         self.assertEqual([views.duration(x) for x in (59, 60, 3599, 3600, 47 * 3600 + 3599, 48 * 3600, 100 * 3600)],
                          ["1 min", "1 min", "59 min", "1 h", "47 h", "2.0 d", "4.2 d"])
 
-    def test_the_viewer_and_index_show_lead_time(self):
+    def test_the_viewer_and_index_show_the_spans(self):
         s = slug()
         run("init", s, "--title", "Timed", "--owner", "me")
-        self.ticket(s, "L-1", "2026-09-01T00:00:00Z", "2026-09-01T06:00:00Z")
-        self.ticket(s, "L-2", "2026-09-01T00:00:00Z", status="todo")
+        self.ticket(s, "S-1", "2026-09-01T00:00:00Z", "2026-09-01T02:00:00Z", "2026-09-01T08:00:00Z")
+        self.ticket(s, "S-2", "2026-09-01T00:00:00Z", status="todo")
         tr = model.Tracker(model.HOME / s)
         page = viewer.main_html(tr)
         head = re.search(r"<div class=seq-head>(.*?)</div>", page).group(1)
         self.assertEqual(re.findall(r'data-sort="(\w+)"', head),
-                         ["step", "ticket", "group", "status", "priority", "lead", "waits", "unblocks"])
+                         ["step", "ticket", "group", "status", "priority", "wait", "cycle", "waits", "unblocks"])
 
-        def lead(ident: str) -> str:
-            return re.search(rf'<details data-id="{ident}"[^>]* data-l="([^"]*)"', page).group(1)
-        self.assertEqual((lead("L-1"), lead("L-2")), ("21600", ""))
-        self.assertRegex(page, r'data-id="L-1".*?<summary>.*?<span>6 h</span>')
-        run("--tracker", s, "set", "L-1", "summary=Shipped the API")  # the opened row still leads with its summary
+        def spans(ident: str) -> tuple[str, str]:
+            return re.search(rf'<details data-id="{ident}"[^>]* data-sw="([^"]*)" data-sc="([^"]*)"', page).groups()
+        self.assertEqual((spans("S-1"), spans("S-2")), (("7200", "21600"), ("", "")))
+        self.assertRegex(page, r'data-id="S-1".*?<summary>.*?<span>2 h</span><span>6 h</span>')
+        run("--tracker", s, "set", "S-1", "summary=Shipped the API")  # the opened row still leads with its summary
         page = viewer.main_html(model.Tracker(model.HOME / s))
-        self.assertRegex(page, r'data-id="L-1".*?<dl class=props><dt>summary</dt><dd>Shipped the API</dd>')
-        line = views.lead_line(tr)
-        self.assertIn(f"<p class=lead>{html.escape(line)}</p>", page)
-        self.assertEqual(run("--tracker", s, "index").splitlines()[1], line)
+        self.assertRegex(page, r'data-id="S-1".*?<dl class=props><dt>summary</dt><dd>Shipped the API</dd>')
+        lines = views.span_lines(tr)
+        self.assertEqual(len(lines), 2)
+        self.assertIn("".join(f"<p class=lead>{html.escape(x)}</p>" for x in lines), page)
+        self.assertEqual(run("--tracker", s, "index").splitlines()[1:3], lines)
         bare = slug()
         run("init", bare, "--title", "Untimed", "--owner", "me")
         self.assertNotIn("class=lead", viewer.main_html(model.Tracker(model.HOME / bare)))
-        self.assertNotIn("Lead time", run("--tracker", bare, "index"))
+        self.assertNotIn("Cycle time", run("--tracker", bare, "index"))
 
 
 class Watch(unittest.TestCase):

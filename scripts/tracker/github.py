@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .markdown import format_value
 from .model import (PR_MATCH_TTL_S, SYNC_MIN_INTERVAL_S, append_log, branch_entry, locked, pr_key, put_entry,
-    today, unblocked, utc_seconds, Record, Tracker)
+    today, unblocked, Record, Tracker)
 from .git import default_branches, remote_of, repo_slug
 from .session import match_cwd, named_in, Match
 
@@ -166,12 +166,6 @@ def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) ->
         # Only started work has a PR: a todo ticket on a branch that holds a PR is not in it yet. A merged PR is
         # final: a later PR from a branch the ticket shared is other tickets' work.
         started = t.get("status") in ("in-progress", "done")
-        if t.get("pr_state") == "merged" and repo and merge_time_wanted(t) and lookups < GH_LOOKUPS_MAX:
-            lookups += 1  # merged before merge times were kept: read its time once, for lead time
-            pr = gh_pr_of(repo, t)
-            if pr and pr.get("mergedAt"):
-                found[t.id] = (repo, pr)
-            continue
         if not started or t.get("pr_state") == "merged" or not repo or not (t.get("branch") or t.get("pr")):
             continue
         prs = prs_by_repo.get(repo, [])
@@ -189,13 +183,6 @@ def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) ->
         reviews = {k: v for k, v in reviews.items() if k in {pr_key(repo, n) for repo, n in opened}}
     with locked():
         return apply_sync(Tracker(tr.root), found, reviews)
-
-
-def merge_time_wanted(t: Record) -> bool:
-    """A merged ticket whose PR's merge is known only by its date, though its issue's creation time is known: lead
-    time needs the merge's time."""
-    return utc_seconds(t.get("merged_at")) is None and utc_seconds(t.get("issue_created")) is not None and \
-        bool(t.get("pr"))
 
 
 def apply_sync(tr: Tracker, found: dict[str, tuple[str, dict]], reviews: dict[str, dict] | None = None) -> list[str]:

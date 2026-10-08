@@ -7,8 +7,8 @@ import time
 from pathlib import Path
 from statistics import median
 
-from .model import (BIN, CLOSED_TICKET, ISOLATION_RULE, STAGES, TEXT_MAX, cut, link_lines, resolution, sequence, short,
-    utc_seconds, whose_move, Record, Start, Tracker)
+from .model import (BIN, CLOSED_TICKET, ISOLATION_RULE, SPANS, STAGES, TEXT_MAX, cut, link_lines, resolution, sequence,
+    short, span, utc_seconds, whose_move, Record, Start, Tracker)
 from .session import ago, branch_handoff, cwd_repo, handoff_line, lag, Match
 from .contract import check
 
@@ -314,7 +314,7 @@ BRIEF_TICKETS_MAX = 3  # tickets under way shown in full; the rest get one line 
 BRIEF_CARRY_CHARS = 6000  # the dependencies' Carry forward, about 1.5K tokens
 BRIEF_LINE_CHARS = 200  # a Context, link, log or settled-decision line
 BRIEF_LOG = 2  # log lines per ticket
-LEAD_RECENT_S = 7 * 86400  # the lead time line's recent window
+SPAN_RECENT_S = 7 * 86400  # a span line's recent window
 
 
 def duration(seconds: float) -> str:
@@ -326,20 +326,23 @@ def duration(seconds: float) -> str:
     return f"{seconds / 86400:.1f} d"
 
 
-def lead_line(tr: Tracker, now: float | None = None) -> str:
-    """The tracker's lead time, from issue created to PR merged: the median, the fastest ticket, and the median of the
-    merges in the last 7 days. Empty when no ticket has one."""
-    leads = [(t, lead) for t in tr.tickets if (lead := tr.lead_time(t)) is not None]
-    if not leads:
-        return ""
+def span_lines(tr: Tracker, now: float | None = None) -> list[str]:
+    """A line per span (SPANS) that some ticket has: the median, the fastest ticket, and the median of the spans that
+    ended in the last 7 days."""
     now = time.time() if now is None else now
-    fastest = min(leads, key=lambda x: x[1])
-    parts = [f"Lead time (issue created → PR merged): median {duration(median(x for _, x in leads))} over "
-             f"{len(leads)}", f"fastest {duration(fastest[1])} ({fastest[0].id})"]
-    recent = [x for t, x in leads if now - (utc_seconds(t.get("merged_at")) or 0) <= LEAD_RECENT_S]
-    if recent:
-        parts.append(f"last 7 days: median {duration(median(recent))} over {len(recent)}")
-    return " · ".join(parts)
+    lines = []
+    for name, (_, end, what) in SPANS.items():
+        spans = [(t, x) for t in tr.tickets if (x := span(t, name)) is not None]
+        if not spans:
+            continue
+        fastest = min(spans, key=lambda tx: tx[1])
+        parts = [f"{name.capitalize()} time ({what}): median {duration(median(x for _, x in spans))} over "
+                 f"{len(spans)}", f"fastest {duration(fastest[1])} ({fastest[0].id})"]
+        recent = [x for t, x in spans if now - (utc_seconds(t.get(end)) or 0) <= SPAN_RECENT_S]
+        if recent:
+            parts.append(f"last 7 days: median {duration(median(recent))} over {len(recent)}")
+        lines.append(" · ".join(parts))
+    return lines
 
 
 ISSUE_DUE_SHOWN = 10  # due tickets named in the request for their issue fields; the rest as a count

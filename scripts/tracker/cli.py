@@ -16,14 +16,14 @@ from .model import (BLOCKER, CLOSED_TICKET, DECISION_ID, DECISION_SECTIONS, DECI
     STAGES, TICKET_SECTIONS, TICKET_STATUSES, TRACKER_STATUSES, all_trackers, append_log, append_to_section,
     blocker_link, create, csv, dated, die, drop_from_section, fit, id_list, link_url, load_record, locked, names,
     norm_id, put_section, relabel, replace_in_section, resolution, same_repo, sequence, short, sort_key, spawn, today,
-    unblocked, Busy, Record, Tracker)
+    unblocked, utc_now, Busy, Record, Tracker)
 from .git import branch_of, contains, default_branches, worktree_key
 from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_session, find_tracker, in_repos,
     load_session, locate, mark_up_to_date, match_cwd, on_branch, record_commits, remember, resolve, save_session,
     session_id, session_tracker, trackers_for_repo, watch, work_dir)
 from .contract import check, migrate, rules_lines
-from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, brief, context_lines, dep_lines, index_lines, lead_line,
-    order_lines, start_text)
+from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, brief, context_lines, dep_lines, index_lines, order_lines,
+    span_lines, start_text)
 from .github import match_pr, sync
 from .watcher import REFUSED, Watcher, agent_session, granted, session_name, watching
 
@@ -78,8 +78,7 @@ def cmd_index(args):
     if args.active:
         stages = set(STAGES) - CLOSED_TICKET
     lines = index_lines(tr, stages, args.group)
-    lead = lead_line(tr)
-    print("\n".join(lines[:1] + [lead] * bool(lead) + lines[1:]))
+    print("\n".join(lines[:1] + span_lines(tr) + lines[1:]))
 
 
 def cmd_here(args):
@@ -177,15 +176,18 @@ def cmd_set(args):
             updates["next"] = ""  # a closed ticket has no next action; its summary says what it delivered
         if not (updates.get("summary") or rec.get("summary")):
             notes.append(f"set its summary: `tracker set {rec.id} summary=\"<what it delivered, or why dropped>\"`")
-    if rec.kind == "ticket" and updates.get("status") == "in-progress" and "branch" not in updates:
-        notes += start_here(tr, rec, updates)
+    if rec.kind == "ticket" and updates.get("status") == "in-progress":
+        if "branch" not in updates:
+            notes += start_here(tr, rec, updates)
+        if not rec.get("started_at"):
+            updates["started_at"] = utc_now()  # the first start: a cycle time runs from it
     if rec.kind != "tracker":
         updates["updated"] = today()
     blocked = {t.id for t in tr.tickets if tr.blockers(t)}
     was = rec.stage if rec.kind == "ticket" else ""
     rec.save(updates)
     print(f"{rec.id}: " + ", ".join(k if len(str(v)) > 40 else f"{k}={format_value(v)}"
-                                    for k, v in updates.items() if k != "updated"))
+                                    for k, v in updates.items() if KEYS[rec.kind][k][0] != "auto"))
     if was == "todo" and updates.get("status") == "in-progress":
         notes += base_notes(tr, rec)
     if rec.kind == "ticket" and "status" in updates:

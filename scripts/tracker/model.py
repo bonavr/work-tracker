@@ -55,12 +55,12 @@ KEYS = {
         "next": ("set", "one concrete next action, true as of now; cleared when the ticket closes"),
         "summary": ("set", "one line: what the ticket delivered or why it was dropped; shown once it is closed"),
         "updated": ("auto", "date of the last change through the CLI"),
+        "started_at": ("auto", "when `set status=in-progress` first started the ticket, UTC (YYYY-MM-DDTHH:MM:SSZ)"),
         "pr": ("sync", "the PR number"),
         "pr_state": ("sync", "draft|open|merged|closed, from the PR"),
         "base": ("sync", "the PR's base branch; while the PR is open, a base that is other tickets' branch makes "
                          "this ticket wait on them (computed; depends_on does not change)"),
-        "merged_at": ("sync", "when the PR merged, UTC (YYYY-MM-DDTHH:MM:SSZ). A date alone, written before 0.29, "
-                              "stays until `sync` reads the time, which it does when lead time needs it"),
+        "merged_at": ("sync", "when the PR merged, UTC (YYYY-MM-DDTHH:MM:SSZ); a date alone before 0.29"),
         "priority": ("issue", "the priority the ticket's issue has in its issue tracker, in that tracker's words "
                               "(High, P1, Urgent)"),
         "issue_created": ("issue", "when the ticket's issue was created in its issue tracker, UTC "
@@ -123,6 +123,11 @@ PRIORITY_RANKS = {"urgent": 0, "highest": 0, "critical": 0, "blocker": 0, "high"
                   "low": 3, "lowest": 4, "trivial": 4}
 PRIORITY_UNKNOWN = 9
 
+# A ticket's spans: name -> (key it starts at, key it ends at, what it measures). Each needs both times exact (UTC to
+# the second) and in order. A dropped ticket has none.
+SPANS = {"wait": ("issue_created", "started_at", "issue created → started"),
+         "cycle": ("started_at", "merged_at", "started → PR merged")}
+
 
 def utc_seconds(text: str) -> float | None:
     """A `YYYY-MM-DDTHH:MM:SSZ` time as epoch seconds; None for anything else, a date alone included."""
@@ -130,6 +135,14 @@ def utc_seconds(text: str) -> float | None:
         return calendar.timegm(time.strptime(str(text), "%Y-%m-%dT%H:%M:%SZ"))
     except ValueError:
         return None
+
+
+def span(t: Record, name: str) -> int | None:
+    """A ticket's span (SPANS) in seconds; None when dropped, or without both times exact and in order."""
+    if t.stage == "dropped":
+        return None
+    start, end = (utc_seconds(t.get(k)) for k in SPANS[name][:2])
+    return int(end - start) if start is not None and end is not None and end >= start else None
 
 
 def priority_rank(text: str) -> int | None:
@@ -187,6 +200,10 @@ def dated(text: str) -> str:
 
 def today() -> str:
     return dt.date.today().isoformat()
+
+
+def utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def die(msg: str, code: int = 2) -> None:
@@ -683,14 +700,6 @@ class Tracker:
             out[part] = {k: v for k, v in state.get(part, {}).items() if current(part, k, v)}
         out["pr_match"] = {k: v for k, v in state.get("pr_match", {}).items() if now - v.get("at", 0) < PR_MATCH_TTL_S}
         return {k: v for k, v in out.items() if v != {}}
-
-    def lead_time(self, t: Record) -> int | None:
-        """Seconds from when the ticket's issue was created to when its PR merged; None unless both times are exact
-        and the merge came after the issue."""
-        if t.get("pr_state") != "merged" or t.stage == "dropped":
-            return None
-        created, merged = utc_seconds(t.get("issue_created")), utc_seconds(t.get("merged_at"))
-        return int(merged - created) if created is not None and merged is not None and merged >= created else None
 
     def issue_due(self, now: float | None = None) -> list[Record]:
         """The tickets whose issue fields the model should read from their issue tracker (STATE_RULES["issues"])."""
