@@ -17,7 +17,7 @@ Use the command prefix from the session's `[work-tracker]` hook for every call w
 | File | Holds |
 |---|---|
 | `README.md` | the work: Context (the documents it answers to), Goal, Scope; ≤ ~2K tokens, rewritten, never appended to |
-| `tickets/<ID>.md` | frontmatter = state (`status`, `branch`, `next`, `summary`, `depends_on`, PR keys); body = Plan, Carry forward, Links |
+| `tickets/<ID>.md` | frontmatter = state (`status`, `branch`, `next`, `summary`, `depends_on`, PR keys, issue keys); body = Plan, Carry forward, Links |
 | `decisions/D-<n>.md` | a direction decision: Question, Options, and once closed, Resolution |
 | `log.md` | dated one-line history, append-only |
 | `evidence/` | files the records cite: runs, measurements, scripts |
@@ -32,6 +32,7 @@ Use the command prefix from the session's `[work-tracker]` hook for every call w
 - **Whose move**: computed for each ticket under way from its PR's reviews, checks and merge state (`sync`) and its open decisions and external blockers; the brief's `move:` line, `tracker index` and the viewer show it. `next` holds your own next action: do not write a wait on a reviewer into it.
 - **A decision's answer**: its Resolution. Tickets show it through `context`.
 - **Issue-tracker id**: the ticket's `- Issue: [PROJ-12 Title](url)` line; the id also finds the ticket.
+- **Issue fields** (`priority`, `issue_created`): the issue tracker holds them; `tracker issue` records what you read there. The tracker cannot read an issue tracker, so the brief, or a prompt after the viewer's Refresh, names the tickets whose fields are due.
 - **Unfinished work between sessions**: the branch's handoff, until the next `step`.
 - **Build detail**: the PR and commits. The hooks log each commit on the branch of a ticket under way: do not log a commit again.
 
@@ -64,6 +65,7 @@ Record each fact at the moment it forms, in its home:
 | a direction choice is raised or settled | `tracker decide` (below) |
 | a ticket must wait, or stops waiting | `tracker wait <id> on\|off <ids>` |
 | a note for several tickets, or none | `tracker log "<what changed and why>" --ref <ids>` |
+| a `[work-tracker]` line names issue fields due | read each issue with its issue tracker's tool (an MCP server for Shortcut, Jira, Linear …) and `tracker issue <id> --priority "<its word>" --created <ISO 8601 time>`, or `tracker issue <id>` when it has neither. With no such tool, leave them: never guess a value |
 
 - **Text with quotes, backticks or several lines**: pass `-` for any text argument and the text on stdin, in a heredoc with a quoted marker (`<<'EOF'`), so the shell changes nothing. Edit a tracker file by hand only for what `add`, `drop` and `put` do not cover.
 - **Subagents** do not write the tracker (a hook tells each one): put what a subagent needs in its prompt (the output of `tracker context <id> --brief`, or the part that matters), and record what it reports, as you record your own work.
@@ -82,7 +84,7 @@ Completion: each ticket under way has a `next` true as of now (a `[work-tracker]
 
 ## View
 
-`tracker open [id]` opens the live viewer for the user. Its Now section shows the tickets under way, each branch's handoff and how long ago its commits were last logged.
+`tracker open [id]` opens the live viewer for the user. Its Now section shows the tickets under way, each branch's handoff and how long ago its commits were last logged. Its Refresh (top right) pulls PR state at once and asks the next prompt for the due issue fields.
 
 ## New tracker or migration
 

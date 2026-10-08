@@ -312,6 +312,22 @@ BRIEF_TICKETS_MAX = 3  # tickets under way shown in full; the rest get one line 
 BRIEF_CARRY_CHARS = 6000  # the dependencies' Carry forward, about 1.5K tokens
 BRIEF_LINE_CHARS = 200  # a Context, link, log or settled-decision line
 BRIEF_LOG = 2  # log lines per ticket
+ISSUE_DUE_SHOWN = 10  # due tickets named in the request for their issue fields; the rest as a count
+
+
+def issue_request(tr: Tracker) -> str:
+    """The request for the issue fields that are due (STATE_RULES["issues"]), or "". The model reads them with the
+    issue tracker's tool; the tracker cannot."""
+    due = tr.issue_due()
+    if not due:
+        return ""
+    ids = ", ".join(t.id for t in due[:ISSUE_DUE_SHOWN]) + (f" +{len(due) - ISSUE_DUE_SHOWN}"
+                                                             if len(due) > ISSUE_DUE_SHOWN else "")
+    return (f"[work-tracker] Issue fields due for {len(due)} ticket(s): {ids} (`tracker issue --due` gives their issue "
+            "links). If a tool for their issue tracker is available (an MCP server for Shortcut, Jira, Linear …), "
+            "read each issue's priority and creation time and record them: `tracker issue <id> --priority \"<the "
+            "tracker's word>\" --created <ISO 8601 time>`, or `tracker issue <id>` when it has neither. With no such "
+            "tool, leave them and never guess a value.")
 
 
 def brief(m: Match, cwd: str | Path, synced: list[str] | None = None, note: str = "", compact: bool = False,
@@ -367,6 +383,9 @@ def brief(m: Match, cwd: str | Path, synced: list[str] | None = None, note: str 
         parts.append("\n".join(index_lines(tr, set(STAGES) - CLOSED_TICKET, titles=compact, width=BRIEF_LINE_CHARS)))
     if synced:
         parts.append("Synced from GitHub: " + "; ".join(synced))
+    ask = issue_request(tr)
+    if ask:
+        parts.append(ask)
     errors, warnings = check(tr)
     if errors or warnings:
         parts.append(f"Tracker check: {len(errors)} errors, {len(warnings)} warnings — run `check`.")
