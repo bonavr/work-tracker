@@ -1071,6 +1071,9 @@ class LeadTime(unittest.TestCase):
             return re.search(rf'<details data-id="{ident}"[^>]* data-l="([^"]*)"', page).group(1)
         self.assertEqual((lead("L-1"), lead("L-2")), ("21600", ""))
         self.assertRegex(page, r'data-id="L-1".*?<summary>.*?<span>6 h</span>')
+        run("--tracker", s, "set", "L-1", "summary=Shipped the API")  # the opened row still leads with its summary
+        page = viewer.main_html(model.Tracker(model.HOME / s))
+        self.assertRegex(page, r'data-id="L-1".*?<dl class=props><dt>summary</dt><dd>Shipped the API</dd>')
         line = views.lead_line(tr)
         self.assertIn(f"<p class=lead>{html.escape(line)}</p>", page)
         self.assertEqual(run("--tracker", s, "index").splitlines()[1], line)
