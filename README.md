@@ -143,8 +143,7 @@ Environment variables. All are optional.
 | `TRACKER_NUDGE_EVERY` | 5 | messages between state lines |
 | `TRACKER_VIEWER_IDLE` | 180 | seconds before an unused viewer stops |
 | `TRACKER_VIEWER_PORT` | 7316 | the viewer's port; 0: a free port each start, and the hooks start no viewer |
-| `TRACKER_VIEWER_SYNC` | 120 | seconds between the viewer's GitHub syncs |
-| `TRACKER_WATCH_SYNC` | 120 | seconds between the watcher's GitHub syncs |
+| `TRACKER_SYNC` | 120 | seconds between GitHub syncs while a page or a watch is open (a session's hooks sync at most every 10 min) |
 | `TRACKER_WATCH_IDLE` | 600 | seconds before an idle agent that waits on you is reported |
 | `TRACKER_WATCH_BUSY` | 2700 | seconds a busy agent can record nothing before it is reported |
 

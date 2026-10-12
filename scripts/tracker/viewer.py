@@ -19,9 +19,10 @@ import time
 from typing import Callable, NamedTuple
 
 from .markdown import headings, section_block, strip_comments, without_section, Link
-from .model import (EVIDENCE_DIR, FACTS, HOME, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, all_trackers, archived_at,
-    archived_trackers, branch_entry, close_action, day_text, due_date, files_hash, level, level_name, locked, sequence,
-    show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep, Move, Record, Tracker)
+from .model import (EVIDENCE_DIR, FACTS, HOME, LIVE_SYNC_S, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, all_trackers,
+    archived_at, archived_trackers, branch_entry, close_action, day_text, due_date, files_hash, level, level_name,
+    locked, sequence, show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep, Move,
+    Record, Tracker)
 from .system import CLI, PACKAGE, PYTHON, WINDOWS, spawn
 from .session import ago, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
@@ -752,7 +753,6 @@ def code_id() -> str:
 CODE_ID = code_id()
 TOKEN = secrets.token_urlsafe(16)  # in each page; every POST must send it, which another site's page cannot read
 REFRESH_SYNC_S = 15  # a Refresh syncs GitHub unless a sync ran this recently
-VIEWER_SYNC_S = int(os.environ.get("TRACKER_VIEWER_SYNC", "120"))  # GitHub sync while a page is open
 # Only same-origin scripts run: no inline script or handler, if tracker text gets past Html's escaping.
 PAGE_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline'"
 RESTART_WAIT_S = 10  # how long `open` waits for a viewer on this code to restart onto a new version of it
@@ -1003,7 +1003,7 @@ def serve(port: int = 0) -> None:
                 tr = tracker_at(slug) if time.monotonic() - seen < 60 else None
                 if tr:
                     try:
-                        sync(tr, force=False, min_interval=VIEWER_SYNC_S)
+                        sync(tr, force=False, min_interval=LIVE_SYNC_S)
                     except (Exception, SystemExit):  # gh missing, a bad file, a busy lock: try again next round
                         pass
 

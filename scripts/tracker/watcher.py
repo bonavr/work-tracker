@@ -12,8 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-from .model import (ARCHIVE, HOME, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, read_json, commits_logged, die,
-    files_hash, locked, short, write_json, Tracker)
+from .model import (ARCHIVE, HOME, LIVE_SYNC_S, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, read_json, commits_logged,
+    die, files_hash, locked, short, write_json, Tracker)
 from .system import alive, to_trash
 from .session import (SESSIONS_DIR, drop_session, live_sessions, load_session, match_cwd, claude_sessions, session_id,
     ticket_facts, Live)
@@ -25,7 +25,6 @@ WATCH_DIR = HOME / ".watch"  # <slug>.json: a tracker's watcher and what it repo
 GRANTS = WATCH_DIR / "grants"
 POLL_S = 2  # the tracker's files and the sessions: local and cheap
 SETTLE_S = 5  # after a change, wait this long for the rest of it (a step writes more than one file): one batch
-SYNC_S = int(os.environ.get("TRACKER_WATCH_SYNC", "120"))  # between GitHub syncs
 IDLE_S = int(os.environ.get("TRACKER_WATCH_IDLE", "600"))  # an agent idle this long waits on the user
 BUSY_S = int(os.environ.get("TRACKER_WATCH_BUSY", "2700"))  # busy this long with nothing recorded: it may be stuck
 CATCH_UP_S = 12 * 3600  # a watcher that starts again this soon reports what changed while it was stopped
@@ -296,7 +295,7 @@ class Watcher:
         return lines
 
     def batch(self, now: float, force: bool = False) -> list[str]:
-        """What changed: GitHub (asked every SYNC_S), the files (once they settle; at once with `force`), and the
+        """What changed: GitHub (asked every LIVE_SYNC_S), the files (once they settle; at once with `force`), and the
         agents. An agent is active while events name its tickets."""
         events = self.github(now)
         tr = self.tracker()  # after the sync, which may write
@@ -317,15 +316,15 @@ class Watcher:
         return lines_of(events, now)
 
     def github(self, now: float) -> list[Event]:
-        """Sync PR state at most every SYNC_S (a viewer's or a hook's sync counts), and say once when it fails, and
+        """Sync PR state at most every LIVE_SYNC_S (a viewer's or a hook's sync counts), and say once when it fails, and
         once when it works again. What it changes shows as the files change."""
         tr = self.tracker()
-        if not tr.repos or now - self.synced < SYNC_S:
+        if not tr.repos or now - self.synced < LIVE_SYNC_S:
             return []
         self.synced = now
         budget(GH_BUDGET_S)
         try:
-            changes = sync(tr, force=False, min_interval=SYNC_S)
+            changes = sync(tr, force=False, min_interval=LIVE_SYNC_S)
         except (Exception, SystemExit) as exc:  # a busy lock, a bad file: try again next time
             changes = [f"sync skipped: {exc}"]
         finally:

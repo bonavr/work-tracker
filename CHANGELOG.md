@@ -46,6 +46,7 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 - Any write that leaves a ticket with nothing to wait on says so, `tracker wait <id> off` too. A write no longer ends with "log line written".
 - `tracker index`, `tracker context` and the viewer give what a record waits on, blocks and touches in the same words, each with its state: `waits on`, `stacks on`, `unblocks`, `blocks`, `touches`. An opened action lists its dates as a ticket does.
 - `tracker context`, the brief and `tracker ready` show a ticket's priority and size, and the viewer's opened ticket lists them with its other facts. `tracker ready` lists the most urgent first. In `tracker context` and the brief, a ticket's branch, repo, priority, size and due day share one line.
+- `TRACKER_SYNC` sets how often an open viewer page or a watch syncs with GitHub. It replaces `TRACKER_VIEWER_SYNC` and `TRACKER_WATCH_SYNC`, which still work for now.
 - The brief, `tracker index` and the hooks say "PR" where they said "GitHub": `Synced PR state`, `Whose move (PRs read 5 min ago)`.
 - `tracker watch` writes a move as `tracker context` does: `move: you — checks failing`.
 

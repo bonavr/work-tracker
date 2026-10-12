@@ -1745,12 +1745,12 @@ class Watch(unittest.TestCase):
         with mock.patch.object(watcher, "sync", return_value=failed):
             w.claim(now)
             self.assertIn("! github: sync skipped: gh failed", "".join(w.poll(now)))
-            self.assertEqual(w.poll(now + watcher.SYNC_S), [])  # said once
+            self.assertEqual(w.poll(now + model.LIVE_SYNC_S), [])  # said once
         with mock.patch.object(watcher, "sync", return_value=[]):
-            self.assertEqual(w.poll(now + 2 * watcher.SYNC_S), [])  # skipped for its interval: not proof it works
+            self.assertEqual(w.poll(now + 2 * model.LIVE_SYNC_S), [])  # skipped for its interval: not proof it works
             tr = model.Tracker(model.HOME / s)
             tr.save_state({"last_sync": now + 1})
-            self.assertIn("github: sync works again", "".join(w.poll(now + 3 * watcher.SYNC_S)))
+            self.assertIn("github: sync works again", "".join(w.poll(now + 3 * model.LIVE_SYNC_S)))
 
     def test_only_the_user_starts_it(self):
         sid, cwd = f"sid{time.monotonic_ns()}", self.work

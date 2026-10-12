@@ -472,7 +472,11 @@ MERGED_CARRY_FORWARD_MAX = 5
 STALE_DECISION_DAYS = 14
 STALE_ACTION_DAYS = 7
 STALE_TICKET_DAYS = 7
-SYNC_MIN_INTERVAL_S = 600
+SYNC_MIN_INTERVAL_S = 600  # a session's hooks sync at most this often
+# While a page or a watch shows the work live, it syncs this often. TRACKER_VIEWER_SYNC and TRACKER_WATCH_SYNC are the
+# names 0.30 gave it, one each: read until a release drops them.
+LIVE_SYNC_S = int(os.environ.get("TRACKER_SYNC") or os.environ.get("TRACKER_VIEWER_SYNC")
+                  or os.environ.get("TRACKER_WATCH_SYNC") or 120)
 PR_MATCH_TTL_S = 600  # how long a branch's PR, once asked, is not asked again
 
 
