@@ -4,6 +4,8 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 
 ## Unreleased
 
+## 0.31.1 - 2026-10-12
+
 ### Changed
 
 - Viewer: the Now section is now called Current.
