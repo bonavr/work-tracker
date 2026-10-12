@@ -1721,7 +1721,7 @@ class Watch(unittest.TestCase):
             return f
 
         running("api", "busy", now - 10)
-        running("ui", "idle", now - watcher.IDLE_S - 60)
+        running("ui", "idle", now - watcher.IDLE_S - 90)  # mid-minute: a ms of float error keeps 11 min
         w = self.watcher()
         first = "\n".join(w.claim(now))
         self.assertIn("! W-1 in-progress · move: you — no PR yet · agent api busy 0 min · agent ui idle 11 min", first)
