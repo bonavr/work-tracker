@@ -158,17 +158,18 @@ Environment variables. All are optional.
 
 `scripts/tracker/`: stdlib only, run by `bin/tracker` and `scripts/hook.sh`. One module per concern; each imports only the modules before it:
 
-1. `markdown`: the file format as text (frontmatter, sections, link lines)
-2. `model`: contract constants, records, dependencies, body edits, the lock. A new record kind, status, value form or scale is one entry in `KINDS`, `LIFECYCLES`, `FORMS` or `SCALES`: each one's docstring or comment says what else follows from it
-3. `git`
-4. `session`: the session's tracker, branch matching, commit marks and handoffs, the sessions running now
-5. `contract`: `check`, `rules`, `migrate`
-6. `views`: text views and the brief
-7. `github`: the GitHub adapter. `sync` reads PR state with `gh` and maps GitHub's words onto the tracker's (`PR_FACTS`); `model.apply_prs` writes them, and `whose_move` reads only those. Another forge is another adapter
-8. `watcher`: `tracker watch` and the user's grant; archiving and deleting a tracker
-9. `viewer`: the page and its server (look: `viewer/page.html`, `style.css`, `app.js`). Markup is `Html`, which escapes the text put into it; the sequence's columns are its `Column` table
-10. `hooks`
-11. `cli`
+1. `system`: this Python and the CLI as processes, whether a process runs, the system's trash
+2. `markdown`: the file format as text (frontmatter, sections, link lines)
+3. `model`: contract constants, records, dependencies, body edits, the lock. A new record kind, status, value form or scale is one entry in `KINDS`, `LIFECYCLES`, `FORMS` or `SCALES`: each one's docstring or comment says what else follows from it
+4. `git`
+5. `session`: the session's tracker, branch matching, commit marks and handoffs, the sessions running now
+6. `contract`: `check`, `rules`, `migrate`
+7. `views`: text views and the brief
+8. `github`: the GitHub adapter. `sync` reads PR state with `gh` and maps GitHub's words onto the tracker's (`PR_FACTS`); `model.apply_prs` writes them, and `whose_move` reads only those. Another forge is another adapter
+9. `watcher`: `tracker watch` and the user's grant; archiving and deleting a tracker
+10. `viewer`: the page and its server (look: `viewer/page.html`, `style.css`, `app.js`). Markup is `Html`, which escapes the text put into it; the sequence's columns are its `Column` table
+11. `hooks`
+12. `cli`
 
 ### Evals
 

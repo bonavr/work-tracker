@@ -36,7 +36,7 @@ for var in ("TRACKER", "TRACKER_SESSION", "CLAUDE_ENV_FILE", "CLAUDECODE", "CLAU
             "CODEX_THREAD_ID", "PLUGIN_ROOT"):
     os.environ.pop(var, None)
 sys.path.insert(0, str(ROOT / "scripts"))
-from tracker import cli, git, github, hooks, markdown, model, session, viewer, views, watcher  # noqa: E402
+from tracker import cli, git, github, hooks, markdown, model, session, system, viewer, views, watcher  # noqa: E402
 
 
 def slug() -> str:
@@ -585,7 +585,7 @@ class FileSafety(unittest.TestCase):
                 self.assertTrue(path.is_symlink())
                 self.assertEqual(outside.read_text() if exists else outside.exists(), "keep me" if exists else False)
 
-    @unittest.skipIf(model.WINDOWS, "POSIX permission bits")
+    @unittest.skipIf(system.WINDOWS, "POSIX permission bits")
     def test_atomic_write_preserves_modes_and_creates_private_files(self):
         old_mask = os.umask(0o022)
         try:
@@ -668,12 +668,12 @@ class FileSafety(unittest.TestCase):
         run("--tracker", s, "attach", str(source))
         dest = model.HOME / s / "evidence/source.bin"
         self.assertEqual(dest.read_bytes(), source.read_bytes())
-        if not model.WINDOWS:
+        if not system.WINDOWS:
             self.assertEqual(stat.S_IMODE(dest.stat().st_mode), 0o600)
         source.write_bytes(b"changed\x00")
         run("--tracker", s, "attach", str(source), "--force")
         self.assertEqual(dest.read_bytes(), source.read_bytes())
-        if not model.WINDOWS:
+        if not system.WINDOWS:
             self.assertEqual(stat.S_IMODE(dest.stat().st_mode), 0o600)
 
 
@@ -1092,7 +1092,7 @@ class Hooks(unittest.TestCase):
         (work / "json.py").write_text(f"open({str(ran)!r}, 'w').close()\n")
         data = json.dumps({"session_id": f"sid{time.monotonic_ns()}", "cwd": str(work)})
         runs = [([str(ROOT / "scripts/hook.sh"), "session-start"], data), ([str(ROOT / "bin/tracker"), "rules"], ""),
-                ([*model.CLI, "rules"], "")]  # the viewer and spawn() start the CLI so
+                ([*system.CLI, "rules"], "")]  # the viewer and spawn() start the CLI so
         for cmd, stdin in runs:
             subprocess.run(cmd, input=stdin, cwd=work, capture_output=True, text=True)
             self.assertFalse(ran.exists(), cmd[0])
@@ -1809,7 +1809,7 @@ class Delete(unittest.TestCase):
         run("init", self.s, "--title", "Doomed", "--owner", "me")
         self.root = model.HOME / self.s
         self.trash = Path(BASE) / "xdg" / "Trash"
-        patches = [mock.patch.object(watcher, "to_trash", model.xdg_trash),
+        patches = [mock.patch.object(watcher, "to_trash", system.xdg_trash),
                    mock.patch.dict(os.environ, {"XDG_DATA_HOME": str(self.trash.parent)})]
         for p in patches:
             p.start()

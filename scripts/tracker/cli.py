@@ -19,8 +19,9 @@ from .model import (BLOCKER, DEFAULT_LABELS, EVIDENCE, EVIDENCE_DIR, HOME, ISSUE
     append_log, append_notes, append_to_section, archived_at, archived_trackers, atomic_file, atomic_write,
     blocker_link, close_action, create, csv, dated, day_text, days_since, die, drop_from_section, fit, id_kind, id_list,
     kind_names, link_url, load_record, locked, names, put_section, read_value, relabel, replace_in_section, resolution,
-    same_repo, sequence, set_branch, short, sort_key, spawn, stage_of, today, unblocked, unknown_dep, utc_now, Busy,
-    Record, Tracker)
+    same_repo, sequence, set_branch, short, sort_key, stage_of, today, unblocked, unknown_dep, utc_now, Busy, Record,
+    Tracker)
+from .system import spawn
 from .git import branch_of, contains, default_branches, worktree_key
 from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_session, find_tracker, in_repos, locate,
     mark_up_to_date, match_cwd, no_tracker, on_branch, own_change, record_commits, remember, resolve, save_session,

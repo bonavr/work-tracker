@@ -13,9 +13,10 @@ import time
 from pathlib import Path
 
 from .model import (ARCHIVE, HOME, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, read_json, commits_logged, die,
-    files_hash, locked, short, to_trash, write_json, Tracker)
-from .session import (SESSIONS_DIR, alive, drop_session, live_sessions, load_session, match_cwd, claude_sessions,
-    session_id, ticket_facts, Live)
+    files_hash, locked, short, write_json, Tracker)
+from .system import alive, to_trash
+from .session import (SESSIONS_DIR, drop_session, live_sessions, load_session, match_cwd, claude_sessions, session_id,
+    ticket_facts, Live)
 from .contract import check
 from .views import start_text
 from .github import budget, sync

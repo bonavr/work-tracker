@@ -19,10 +19,10 @@ import time
 from typing import Callable, NamedTuple
 
 from .markdown import headings, section_block, strip_comments, without_section, Link
-from .model import (CLI, EVIDENCE_DIR, FACTS, HOME, PACKAGE, PYTHON, README_SECTIONS, ROOT, SCALES, SPANS, STAGES,
-    WINDOWS, all_trackers, archived_at, archived_trackers, branch_entry, close_action, day_text, due_date, files_hash,
-    level, level_name, locked, sequence, show_value, sort_key, span, spawn, tracker_at, whose_move, read_json,
-    write_json, Busy, Dep, Move, Record, Tracker)
+from .model import (EVIDENCE_DIR, FACTS, HOME, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, all_trackers, archived_at,
+    archived_trackers, branch_entry, close_action, day_text, due_date, files_hash, level, level_name, locked, sequence,
+    show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep, Move, Record, Tracker)
+from .system import CLI, PACKAGE, PYTHON, WINDOWS, spawn
 from .session import ago, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
 from .views import dep_facts, duration, pr_label, span_lines, stage_counts

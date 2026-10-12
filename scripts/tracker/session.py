@@ -12,9 +12,10 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .model import (HOME, SAFE_NAME, STAGES, WINDOWS, all_trackers, append_log, archived_at, read_json, branch_entry,
+from .model import (HOME, SAFE_NAME, STAGES, all_trackers, append_log, archived_at, read_json, branch_entry,
     commits_text, die, locked, put_entry, resolution, short, stage_of, state_key, tracker_at, whose_move, write_json,
     Record, Tracker)
+from .system import alive
 from .git import branch_of, changed_files, cwd_repo, default_branches, git, head_of, worktree, worktree_key
 
 
@@ -644,29 +645,6 @@ class Live:
     branch: str
     focus: list[str]  # the tickets `tracker start --on` chose
     since: float  # when the status last changed (epoch s); 0 when not known
-
-
-def alive(pid: int) -> bool:
-    if pid <= 0:  # 0 and -1 name process groups
-        return False
-    if WINDOWS:  # there os.kill(pid, 0) sends Ctrl+C (signal 0 is CTRL_C_EVENT): ask Windows instead
-        import ctypes
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: another user's
-        code = ctypes.c_ulong()
-        try:
-            return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
-        finally:
-            kernel32.CloseHandle(handle)
-    try:
-        os.kill(pid, 0)  # signal 0: only asks whether the process exists
-    except PermissionError:  # another user's
-        return True
-    except (OSError, OverflowError):
-        return False
-    return True
 
 
 def live_sessions(slug: str) -> list[Live]:
