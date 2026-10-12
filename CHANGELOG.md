@@ -4,6 +4,8 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 
 ## Unreleased
 
+## 0.31.0 - 2026-10-12
+
 ### Added
 
 - Viewer: a tracker menu (top left) lists every tracker; pick one to open it. Its ⋯ menu archives it, or deletes it to the system's trash after a confirm. A tracker with an agent session or a watch on it cannot be archived or deleted.
