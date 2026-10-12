@@ -1140,8 +1140,17 @@ class Hooks(unittest.TestCase):
         subprocess.run([str(ROOT / "bin/tracker"), "start", s], cwd=work, env=env, capture_output=True, check=True)
         commit(work, "early work")
         self.assertIsNone(hook("post-bash", sid, work, tool_input={"command": "git commit"}))  # no ticket under way
+        marks = model.tracker_at(s).raw_state()["synced"]
+        self.assertEqual([x.get("waiting") for x in marks.values()], [git.head_of(work)])  # the HEAD it waits at
+        with mock.patch.object(session, "new_commits") as scan:  # the next turn's end: git is not asked again
+            self.assertEqual(session.record_commits(session.match_cwd(work, sid), work), [])
+        scan.assert_not_called()
         self.assertIn("No ticket in progress on feat/W-1; 1 commit(s) not logged",
                       said(hook("prompt", sid, work, prompt="go")))
+        with mock.patch.object(hooks, "lag") as look, contextlib.redirect_stdout(io.StringIO()) as out:
+            hooks.hook_prompt({"session_id": sid, "cwd": str(work), "prompt": "more"})
+        look.assert_not_called()  # said for this mark: no git until the next state line
+        self.assertEqual(out.getvalue(), "")
         run("--tracker", s, "set", "W-1", "status=in-progress", cwd=work)
         self.assertIsNone(hook("stop", sid, work))
         self.assertIn("[W-1] Commits on feat/W-1: ", (model.HOME / s / "log.md").read_text())  # logged for it now

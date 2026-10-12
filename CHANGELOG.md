@@ -54,6 +54,7 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 ### Fixed
 
 - Viewer: after a PR sync fails (`gh` missing, offline or rate-limited), the server tries again after `TRACKER_SYNC` (2 min), not every 10 s while a page is open.
+- On a branch with commits that wait for a ticket to start, the hooks look for new commits once per HEAD, not at each message and each turn's end. Those hooks take about half the time.
 - Viewer: a tracker that spans repos lists them under its title as `a/x, b/y`, not as a Python list.
 - A repo in a nested group (GitLab's `group/sub/name`) matches the tracker that names it; only its last two parts did.
 - `tracker issue --created` takes a UTC time that ends in `Z` on Python 3.9 and 3.10 too, such as the macOS system Python.

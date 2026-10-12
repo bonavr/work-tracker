@@ -312,7 +312,9 @@ def hook_prompt(data: dict) -> None:
         fields["told_issues"] = asked
         lines += [x for x in [issue_request(m.tracker, m.focus)] if x]
     idle = not m.active and bool(m.branch) and in_repos(m.tracker, cwd)
-    work = lag(m, cwd) if not ask and (n % NUDGE_EVERY == 0 or idle) else None
+    mark = get_mark(m.tracker, cwd, m.branch) if idle else None
+    told = bool(mark) and entry.get("idle_told") == (mark.get("at") or 0)  # said for this mark: no git until the next
+    work = lag(m, cwd) if not ask and (n % NUDGE_EVERY == 0 or idle and not told) else None
     new = work is not None and bool(work.commits or work.files)
     if work is not None and (n % NUDGE_EVERY == 0 or (new and entry.get("idle_told") != work.since)):
         lines.append(state_line(m, work))

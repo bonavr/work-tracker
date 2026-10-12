@@ -430,21 +430,30 @@ def log_commits(tr: Tracker, branch: str, commits: list[tuple[str, str]], refs: 
 def record_commits(m: Match, cwd: str | Path) -> list[tuple[str, str]]:
     """The hooks' part of the record: log the branch's commits since its mark against the tickets under way, and move
     the mark, so the model records only what git does not hold (`step`). A branch first seen gets its baseline mark;
-    with no ticket under way, the commits wait unlogged for the ticket the session starts. Returns those logged."""
+    with no ticket under way, the commits wait unlogged for the ticket the session starts, and the mark keeps the HEAD
+    they wait at (`waiting`): git is asked again once HEAD moves or a ticket starts. Returns those logged."""
     if not m.branch:
         return []
+    head = head_of(cwd)
+
+    def nothing_new(mark: dict) -> bool:
+        return head == mark["head"] or not m.active and head == mark.get("waiting")
+
     mark = get_mark(m.tracker, cwd, m.branch)
-    if mark and head_of(cwd) == mark["head"]:
+    if mark and nothing_new(mark):
         return []  # most turns: no lock
     with locked():  # one hook logs a commit, even when a subagent's and the session's run at once
         mark = get_mark(m.tracker, cwd, m.branch)
         if not mark:
             set_mark(m.tracker, cwd, m.branch)
             return []
-        if head_of(cwd) == mark["head"]:
+        if nothing_new(mark):
             return []
         commits = new_commits(cwd, mark)
         if commits and not m.active:
+            state = m.tracker.state()
+            put_entry(state.setdefault("synced", {}), cwd_repo(cwd), m.branch, {**mark, "waiting": head})
+            m.tracker.save_state(state)
             return []
         if commits:
             log_commits(m.tracker, m.branch, commits, [t.id for t in m.active])
