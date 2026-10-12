@@ -684,7 +684,7 @@ def main_html(tr: Tracker) -> Html:
 {decisions}
 {reference}""").format(
         issue=Html("<span hidden id=issue-state>{}</span>").format(state_line) if state_line else NONE,
-        archived=Html('<p id=archived>Archived: out of every list and hook, never synced with GitHub. '
+        archived=Html('<p id=archived>Archived: out of every list and hook, its PRs never synced. '
                       '<button type=button data-act=unarchive>Unarchive</button></p>') if tr.archived else NONE,
         title=tr.title, facts=facts, slug=tr.slug, root=str(tr.root),
         links=panel("_links", named("Links", f"{len(tr.context)}: {labels}"), props_html([link_rows(tr.context)]))

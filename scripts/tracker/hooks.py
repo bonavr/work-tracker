@@ -190,7 +190,7 @@ def hook_post_bash(data: dict) -> None:
         adopt_branch(m, cwd)
         changes = sync(m.tracker, force=True)
         if changes and not subagent:
-            out.append("[work-tracker] Synced from GitHub: " + "; ".join(changes))
+            out.append("[work-tracker] Synced PR state: " + "; ".join(changes))
     if commit:
         record_commits(m, cwd)
         if not subagent and (ask := next_request(m, cwd, sid)):
@@ -294,7 +294,7 @@ def hook_prompt(data: dict) -> None:
     lines = []
     if news:
         lines.append(f"[work-tracker] Changed since your brief on {', '.join(ids)} (by another session or "
-                     f"GitHub): " + "; ".join(news) + ".")
+                     f"a PR sync): " + "; ".join(news) + ".")
     ask = next_request(m, cwd, sid)
     if ask:
         lines.append(ask)  # it holds what the state line would say

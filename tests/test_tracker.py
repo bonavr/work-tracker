@@ -312,7 +312,7 @@ class Moves(unittest.TestCase):
             "M-15": None})
         lines = views.move_lines(tr)
         self.assertEqual(lines[1:3], ["  you: merge conflicts — M-1", "  you: checks failing — M-2"])  # most urgent
-        self.assertEqual(lines[-1], "  not read from GitHub yet (`tracker sync`) — M-11")
+        self.assertEqual(lines[-1], "  PR not read yet (`tracker sync`) — M-11")
 
     def test_sync_reads_reviews(self):
         s = slug()

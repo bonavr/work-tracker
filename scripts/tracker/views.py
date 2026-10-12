@@ -87,9 +87,9 @@ def move_lines(tr: Tracker) -> list[str]:
     if not moves and not unread:
         return []
     synced = tr.raw_state().get("last_sync")
-    out = ["Whose move" + (f" (GitHub read {ago(synced)})" if synced and tr.prs else "") + ":"]
+    out = ["Whose move" + (f" (PRs read {ago(synced)})" if synced and tr.prs else "") + ":"]
     out += [f"  {text} — {', '.join(ids)}" for text, (_, ids) in sorted(moves.items(), key=lambda m: m[1][0])]
-    return out + ([f"  not read from GitHub yet (`tracker sync`) — {', '.join(unread)}"] if unread else [])
+    return out + ([f"  PR not read yet (`tracker sync`) — {', '.join(unread)}"] if unread else [])
 
 
 def stage_counts(tr: Tracker) -> dict[str, int]:
@@ -491,7 +491,7 @@ def brief(m: Match, cwd: str | Path, synced: list[str] | None = None, note: str 
                          + (f" (can start: {', '.join(ready)})" if ready else "") + ".")
         parts.append("\n".join(index_lines(tr, OPEN_STAGES, titles=compact, width=BRIEF_LINE_CHARS, urls=False)))
     if synced:
-        parts.append("Synced from GitHub: " + "; ".join(synced))
+        parts.append("Synced PR state: " + "; ".join(synced))
     ask = issue_request(tr, focus)
     if ask:
         parts.append(ask)

@@ -200,7 +200,7 @@ KEYS = {
     },
     "tracker": {
         "title": ("set", "name of the work"),
-        "repo": ("set", "GitHub owner/name, or a list when the work spans repos; enables `sync`"),
+        "repo": ("set", "the repo's owner/name, or a list when the work spans repos; `sync` reads its PRs"),
         "status": ("set", "the work's status"),
         "owner": ("set", "who owns the work"),
         "created_at": ("auto", "when the tracker was made"),

@@ -28,7 +28,7 @@ from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_sess
 from .contract import check, migrate, rules_lines
 from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, HISTORY_LAST, ISSUE_HOW, brief, context_lines, dep_lines,
     history_lines, index_lines, levels_text, order_lines, span_lines, start_text)
-from .github import match_pr, sync
+from .github import NAME as FORGE, match_pr, sync
 from .watcher import (REFUSED, Refused, Watcher, agent_session, archive_tracker, delete_tracker, granted, session_name,
     unarchive_tracker, watching)
 
@@ -1126,7 +1126,7 @@ def build_parser():
     sp.add_argument("slug")
     sp.add_argument("--title", required=True)
     sp.add_argument("--owner", required=True)
-    sp.add_argument("--repo", help="GitHub owner/name (comma list if the work spans repos); enables `sync`")
+    sp.add_argument("--repo", help=f"{FORGE} owner/name (comma list if the work spans repos); enables `sync`")
     add("rules", cmd_rules, "the tracker's contract: isolation, files, keys and who writes them, machine state, body "
                             "edits, text limits, statuses, times and value scales, link labels, the decision and "
                             "action bars, and the order, start and move rules")
@@ -1264,7 +1264,7 @@ def build_parser():
     sp = add("migrate", cmd_migrate, "bring a tracker made by an older version to the current rules "
                                      "(backs it up to $TRACKER_HOME/.backups first)")
     sp.add_argument("--dry-run", action="store_true", help="only list the changes")
-    add("sync", cmd_sync, "pull each ticket's PR (number, state, base, merge time) from GitHub, and the open PRs' "
+    add("sync", cmd_sync, f"pull each ticket's PR (number, state, base, merge time) from {FORGE}, and the open PRs' "
                           "reviews, checks and merge state, from which each ticket's move is computed")
     sp = add("issue", cmd_issue, "record a ticket's issue fields as read from its issue tracker (priority, size, "
                                  "due day, when the issue was created), or with no id list the tickets whose fields "

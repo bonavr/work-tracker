@@ -17,6 +17,7 @@ from .model import (OPEN_PR, PR_MATCH_TTL_S, SYNC_MIN_INTERVAL_S, apply_prs, bra
 from .git import cwd_repo, default_branches
 from .session import match_cwd, named_in, Match
 
+NAME = "GitHub"  # the forge, where a text names it; the model and the views say "PR" only
 PR_FIELDS = "number,headRefName,state,isDraft,mergedAt,baseRefName,updatedAt,isCrossRepository"
 GH_LIST_LIMIT = 300  # newest PRs per repo in one call
 GH_LOOKUPS_MAX = 5  # single-PR calls per sync, for tickets whose PR is older than that list
