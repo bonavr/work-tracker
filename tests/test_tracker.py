@@ -2150,6 +2150,13 @@ class Values(unittest.TestCase):
         run(*self.t, "set", "T-1", "size=")
         self.assertIsNone(model.weight(self.tr().lookup("T-1"), "size"))
 
+    def test_every_kind_reads_one_lifecycle(self):
+        self.assertEqual(model.STATUSES["ticket"], ("todo", "in-progress", "done", "dropped"))  # the PR adds the rest
+        run(*self.t, "act", "Ask Sam")
+        run(*self.t, "act", "A-01", "--drop")
+        a = self.tr().lookup("A-01")
+        self.assertEqual((a.closed, a.dropped, a.started), (True, True, False))  # read as a ticket's would be
+
     def test_times_are_utc_and_closing_stamps_closed_at(self):
         utc = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"
         t = self.tr().lookup("T-1")

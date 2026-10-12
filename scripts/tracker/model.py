@@ -37,42 +37,42 @@ WINDOWS = os.name == "nt"
 
 @dataclass(frozen=True)
 class Stage:
-    """What a ticket's stage says of its work. Code asks a record (`Record.todo`, `in_flight`, `started`, `closed`,
-    `dropped`); it names a stage only where that one stage matters (in progress against in review)."""
+    """What a record's status says of its work. Code asks a record (`Record.todo`, `in_flight`, `started`, `closed`,
+    `dropped`); it names a status only where that one status matters (in progress against in review)."""
     todo: bool = False  # its work has yet to start
     in_flight: bool = False  # under way: started, not yet closed
     closed: bool = False
     dropped: bool = False  # closed without its work done
+    derived: bool = False  # a ticket's PR gives it; no command sets it
 
     @property
     def started(self) -> bool:
         return self.in_flight or self.closed and not self.dropped
 
 
-NO_STAGE = Stage()  # of an unknown stage (`check` reports it), and of a record that is no ticket
-# A ticket's stages, in the order the views count and sort them (`Record.stage` says which one a ticket is in).
-STAGES = {"todo": Stage(todo=True), "in-progress": Stage(in_flight=True), "in-review": Stage(in_flight=True),
-          "merged": Stage(closed=True), "done": Stage(closed=True), "dropped": Stage(closed=True, dropped=True)}
+NO_STAGE = Stage()  # of an unknown status (`check` reports it)
+# Each kind's statuses, the first a new record's, and what each says of its work. A ticket's are its stages, in the
+# order the views count and sort them; its PR overlays started work (PR_STAGE, `Record.stage`). A new status, or a new
+# kind's, is one entry here: `set`, `check`, `tracker rules` and every closed, dropped or started test follow from it.
+LIFECYCLES = {
+    "ticket": {"todo": Stage(todo=True), "in-progress": Stage(in_flight=True),
+               "in-review": Stage(in_flight=True, derived=True), "merged": Stage(closed=True, derived=True),
+               "done": Stage(closed=True), "dropped": Stage(closed=True, dropped=True)},
+    "decision": {"open": Stage(), "closed": Stage(closed=True)},
+    "action": {"open": Stage(), "done": Stage(closed=True), "dropped": Stage(closed=True, dropped=True)},
+    "tracker": {"planning": Stage(), "active": Stage(), "paused": Stage(), "done": Stage(closed=True)},  # the work's
+}
+STAGES = LIFECYCLES["ticket"]
+# The statuses a command sets, per kind; a ticket's PR adds the others
+STATUSES = {kind: tuple(s for s, x in stages.items() if not x.derived) for kind, stages in LIFECYCLES.items()}
 PR_STAGE = {"draft": "in-progress", "open": "in-review", "merged": "merged"}  # pr_state -> stage of started work
 OPEN_PR = {"draft", "open"}  # pr_state values of a PR not yet merged or closed
 OPEN_STAGES = {s for s, x in STAGES.items() if not x.closed}
 
 
-@dataclass(frozen=True)
-class Statuses:
-    """The words one kind of file's `status` holds, the first a new file's, and those that close it. Each kind keeps
-    its own words; whether a record is closed is `Record.closed`, never a comparison with a word."""
-    values: tuple[str, ...]
-    closed: frozenset[str]
-
-
-TICKET_STATUSES = ("todo", "in-progress", "done", "dropped")  # what you set; the PR adds the other stages
-STATUSES = {
-    "ticket": Statuses(TICKET_STATUSES, frozenset(s for s in TICKET_STATUSES if STAGES[s].closed)),
-    "decision": Statuses(("open", "closed"), frozenset({"closed"})),
-    "action": Statuses(("open", "done", "dropped"), frozenset({"done", "dropped"})),
-    "tracker": Statuses(("planning", "active", "paused", "done"), frozenset({"done"})),  # the work's
-}
+def stage_of(kind: str, status) -> Stage:
+    """What a status (a ticket's stage too) of the kind says of its work; NO_STAGE for an unknown one."""
+    return LIFECYCLES.get(kind, {}).get(str(status), NO_STAGE)
 
 
 # ---------------------------------------------------------------- scales
@@ -643,8 +643,8 @@ STEP_MESSAGE = ("a message only for what the commits do not say (a result, a mea
 @dataclass(frozen=True)
 class Kind:
     """A kind of record: one file per record in its folder, made from templates/<kind>.md. Its keys are KEYS[kind]
-    and its status words STATUSES[kind]; code that serves every kind reads this table, so a new kind is one entry
-    here, in KEYS and in STATUSES, and its command."""
+    and its statuses LIFECYCLES[kind]; code that serves every kind reads this table, so a new kind is one entry
+    here, in KEYS and in LIFECYCLES, and its command."""
     folder: str
     prefix: str  # the letter of its numbered ids (`D`: D-01, D-02); "" for a ticket, whose id is given
     command: str  # the command that adds one; for a numbered kind, also the one that closes it and takes its notes
@@ -775,17 +775,15 @@ class Record:
 
     @property
     def stage(self) -> str:
-        """A ticket's status; once in progress, overlaid by its PR's state (PR_STAGE). A todo ticket on a branch that
-        holds a PR has not started, so the PR says nothing about it. Any other record's status."""
-        status = str(self.get("status", STATUSES[self.kind].values[0]))
-        if self.kind != "ticket" or not STAGES.get(status, NO_STAGE).in_flight:
-            return status
-        return PR_STAGE.get(self.get("pr_state"), status)
+        """Its status; a ticket's, once in progress, overlaid by its PR's state (PR_STAGE). A todo ticket on a branch
+        that holds a PR has not started, so the PR says nothing about it."""
+        status = str(self.get("status", STATUSES[self.kind][0]))
+        return PR_STAGE.get(self.get("pr_state"), status) if stage_of(self.kind, status).in_flight else status
 
     @property
     def progress(self) -> Stage:
-        """What a ticket's stage says of its work; NO_STAGE for an unknown stage, and for any other record."""
-        return STAGES.get(self.stage, NO_STAGE) if self.kind == "ticket" else NO_STAGE
+        """What its stage says of its work; NO_STAGE for an unknown stage."""
+        return stage_of(self.kind, self.stage)
 
     @property
     def todo(self) -> bool:
@@ -805,25 +803,23 @@ class Record:
 
     @property
     def closed(self) -> bool:
-        """A ticket by its stage (a merged PR closes it too); any other record by its kind's closed statuses."""
-        return self.progress.closed if self.kind == "ticket" else self.stage in STATUSES[self.kind].closed
+        """A ticket by its stage (a merged PR closes it too); any other record by its status."""
+        return self.progress.closed
 
     def status_update(self, status: str) -> dict:
         """The keys a status change writes, every one of them: the status; `closed_at` now when it closes the record,
         or none when it opens it again. A ticket's first start from todo stamps `started_at`: its wait time ends and
         its cycle time starts. Its close clears `next`: its summary says what it delivered."""
-        statuses, updates = STATUSES[self.kind], {"status": status}
-        closes = status in statuses.closed
+        updates, to = {"status": status}, stage_of(self.kind, status)
         if "closed_at" in KEYS[self.kind]:
-            if not closes and self.get("closed_at"):
+            if not to.closed and self.get("closed_at"):
                 updates["closed_at"] = None
-            elif closes and self.get("status") not in statuses.closed:
+            elif to.closed and not stage_of(self.kind, self.get("status")).closed:
                 updates["closed_at"] = utc_now()
-        if self.kind == "ticket":
-            if self.todo and STAGES.get(status, NO_STAGE).in_flight and not self.get("started_at"):
-                updates["started_at"] = utc_now()
-            if closes and self.get("next"):
-                updates["next"] = ""
+        if self.todo and to.in_flight and not self.get("started_at"):
+            updates["started_at"] = utc_now()
+        if to.closed and self.get("next"):
+            updates["next"] = ""
         return updates
 
     def change(self, updates: dict | None = None) -> None:

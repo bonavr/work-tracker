@@ -159,7 +159,7 @@ Environment variables. All are optional.
 `scripts/tracker/`: stdlib only, run by `bin/tracker` and `scripts/hook.sh`. One module per concern; each imports only the modules before it:
 
 1. `markdown`: the file format as text (frontmatter, sections, link lines)
-2. `model`: contract constants, records, dependencies, body edits, the lock. A new record kind, value form or scale is one entry in `KINDS`, `FORMS` or `SCALES`: each one's docstring or comment says what else follows from it
+2. `model`: contract constants, records, dependencies, body edits, the lock. A new record kind, status, value form or scale is one entry in `KINDS`, `LIFECYCLES`, `FORMS` or `SCALES`: each one's docstring or comment says what else follows from it
 3. `git`
 4. `session`: the session's tracker, branch matching, commit marks and handoffs, the sessions running now
 5. `contract`: `check`, `rules`, `migrate`

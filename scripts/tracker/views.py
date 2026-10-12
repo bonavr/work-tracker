@@ -8,9 +8,9 @@ from pathlib import Path
 from statistics import median
 
 from .markdown import section, strip_comments
-from .model import (BIN, ISOLATION_RULE, KINDS, LOG_LINE, NO_STAGE, OPEN_STAGES, README_INSTRUCTIONS, SCALES, SPANS,
+from .model import (BIN, ISOLATION_RULE, KINDS, LOG_LINE, OPEN_STAGES, README_INSTRUCTIONS, SCALES, SPANS,
     STAGES, STALE_ACTION_DAYS, STEP_MESSAGE, TEXT_MAX, cut, days_since, due_date, link_lines, logged_decision,
-    resolution, sequence, short, show_value, span, utc_seconds, whose_move, Dep, Record, Start, Tracker)
+    resolution, sequence, short, show_value, span, stage_of, utc_seconds, whose_move, Dep, Record, Start, Tracker)
 from .git import cwd_repo
 from .session import ago, branch_handoff, handoff_line, lag, Match
 from .contract import check
@@ -42,7 +42,7 @@ def index_lines(tr: Tracker, stages: set[str] | None = None, group: str | None =
     for t in rows:
         nxt = gate(tr, t) + short((not t.closed and t.get("next")) or t.get("summary") or t.get("title"), 90)
         out.append(f"{t.id:<{w_id}}  {str(t.get('group') or '—'):<{w_group}}  {t.stage:<11} {pr_label(t):<12} {nxt}")
-    moves = move_lines(tr) if not stages or any(STAGES.get(s, NO_STAGE).in_flight for s in stages) else []
+    moves = move_lines(tr) if not stages or any(stage_of("ticket", s).in_flight for s in stages) else []
     out += [""] + moves + [""] * bool(moves) + order_lines(tr)
     decisions = tr.open_decisions()
     if decisions:

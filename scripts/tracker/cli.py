@@ -19,8 +19,8 @@ from .model import (BLOCKER, DEFAULT_LABELS, EVIDENCE, EVIDENCE_DIR, HOME, ISSUE
     append_log, append_notes, append_to_section, archived_at, archived_trackers, atomic_file, atomic_write,
     blocker_link, close_action, create, csv, dated, day_text, days_since, die, drop_from_section, fit, id_kind, id_list,
     kind_names, link_url, load_record, locked, names, put_section, read_value, relabel, replace_in_section, resolution,
-    same_repo, sequence, set_branch, short, sort_key, spawn, today, unblocked, unknown_dep, utc_now, Busy, Record,
-    Tracker)
+    same_repo, sequence, set_branch, short, sort_key, spawn, stage_of, today, unblocked, unknown_dep, utc_now, Busy,
+    Record, Tracker)
 from .git import branch_of, contains, default_branches, worktree_key
 from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_session, find_tracker, in_repos,
     load_session, locate, mark_up_to_date, match_cwd, no_tracker, on_branch, record_commits, remember, resolve,
@@ -51,7 +51,7 @@ def new_record(tr: Tracker, kind: str, ident: str, title: str, **meta) -> Record
     now = utc_now()
     path = tr.root / KINDS[kind].folder / f"{ident}.md"
     path.parent.mkdir(exist_ok=True)
-    create(path, from_template(kind, {"id": ident, "title": title, "status": STATUSES[kind].values[0], **meta,
+    create(path, from_template(kind, {"id": ident, "title": title, "status": STATUSES[kind][0], **meta,
                                       "created_at": now, "updated_at": now}, tr.labels))
     rec = load_record(path, kind)
     tr.records_of(kind).append(rec)
@@ -189,7 +189,7 @@ def cmd_set(args):
         if schema[k][0] != "set":
             die(f"{k}: {OWNER_HINT[schema[k][0]]}, not `set`")
         if k == "status":
-            allowed = STATUSES[rec.kind].values
+            allowed = STATUSES[rec.kind]
             if v not in allowed:
                 hint = "; in-review and merged come from the ticket's PR" if v in STAGES else ""
                 die(f"status must be one of {'|'.join(allowed)}{hint}")
@@ -200,7 +200,7 @@ def cmd_set(args):
             die(f"repo must be one of the tracker's repos ({', '.join(tr.repos) or 'none'})")
         updates[k] = v
     notes = []
-    to = STAGES.get(updates.get("status", ""), NO_STAGE) if rec.kind == "ticket" else NO_STAGE
+    to = stage_of("ticket", updates.get("status")) if rec.kind == "ticket" else NO_STAGE
     if to.closed and not (updates.get("summary") or rec.get("summary")):
         notes.append(f"set its summary: `tracker set {rec.id} summary=\"<what it delivered, or why dropped>\"`")
     if to.in_flight and "branch" not in updates:
@@ -1148,7 +1148,7 @@ def build_parser():
                     help=f"show the last N log lines for it (default {CONTEXT_LOG}; 0 for none)")
     sp = add("decisions", cmd_decisions, "the open decisions and the tickets they touch, and a count of the settled "
                                          "ones; --all adds those, with their answers")
-    sp.add_argument("--status", choices=STATUSES["decision"].values)
+    sp.add_argument("--status", choices=STATUSES["decision"])
     sp.add_argument("--all", action="store_true", help="every decision, settled ones with their answers")
     sp = add("actions", cmd_actions, "the user's open actions: tasks the agent cannot or should not do; --all adds "
                                      "the closed ones")

@@ -12,9 +12,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .model import (HOME, NO_STAGE, SAFE_NAME, STAGES, STATUSES, WINDOWS, all_trackers, append_log, archived_at,
-    atomic_write, branch_entry, commits_text, die, locked, put_entry, resolution, short, state_key, tracker_at,
-    whose_move, Record, Tracker)
+from .model import (HOME, SAFE_NAME, STAGES, WINDOWS, all_trackers, append_log, archived_at, atomic_write,
+    branch_entry, commits_text, die, locked, put_entry, resolution, short, stage_of, state_key, tracker_at, whose_move,
+    Record, Tracker)
 from .git import branch_of, changed_files, cwd_repo, default_branches, git, head_of, worktree, worktree_key
 
 
@@ -510,7 +510,7 @@ def watch(tr: Tracker, tickets: list[Record]) -> dict[str, list[str]]:
 
 
 def changes_since(tr: Tracker, old: dict, new: dict) -> list[str]:
-    out, closed = [], STATUSES["decision"].closed
+    out = []
     for ident, now in new.items():
         was = old.get(ident)
         if was == now:
@@ -519,15 +519,15 @@ def changes_since(tr: Tracker, old: dict, new: dict) -> list[str]:
         if now[0] == "decision":
             if not was:
                 out.append(f"{ident} {now[1]} now touches this work: {rec.get('title')}")
-            elif now[1] in closed:
-                out.append(f"{ident} {'re-' if was[1] in closed else ''}settled: {now[2]}")
+            elif stage_of("decision", now[1]).closed:
+                out.append(f"{ident} {'re-' if stage_of('decision', was[1]).closed else ''}settled: {now[2]}")
             else:
                 out.append(f"{ident} is {now[1]} again")
         elif not was:
             out.append(f"now waits on {ident} ({now[1]})")
         else:
             # The session's own ticket changes stage by its own doing, or sync's: only its end is news.
-            if was[1] != now[1] and (now[0] != "own" or STAGES.get(now[1], NO_STAGE).closed):
+            if was[1] != now[1] and (now[0] != "own" or stage_of("ticket", now[1]).closed):
                 out.append(f"{ident} is now {now[1]}")
             if now[0] == "own" and len(was) > 2 and was[2] != now[2] and now[2]:  # older sessions kept no move
                 out.append(f"{ident} move now: {now[2]}")
