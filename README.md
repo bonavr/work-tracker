@@ -114,7 +114,7 @@ Each hook runs `scripts/hook.sh`, which filters the event in shell first. In a s
   - Delete moves the tracker's folder to the system's trash after you confirm; restore it from there. If the trash refuses the folder, the folder stays and the dialog shows why.
 - **Refresh** (top right) pulls PR state from GitHub at once, and has the agent read the issue fields again at your next message in a session on the tracker. The live line beside it says when they were last read.
 - **Your actions**: your open actions, soonest due first, with Done and Drop. A due day is red once past. A row opens to what the action blocks and touches, its dates and its notes.
-- **Now**: the tickets under way (your move first), each branch's handoff, and the agent sessions on the tracker (a ring spins while one works). A session is busy from your message to its turn's end; an interrupted turn can show busy until the next event.
+- **Current**: the tickets under way (your move first), each branch's handoff, and the agent sessions on the tracker (a ring spins while one works). A session is busy from your message to its turn's end; an interrupted turn can show busy until the next event.
 - **Sequence**: the tickets in dependency order, depth first so a chain stays together, dropped tickets last. The Step column draws the dependency graph:
   - a dot per ticket: blue when ready, amber when under way or it can stack on work under way, red when blocked, a green ring when closed, a grey ring when dropped. The ticket's id takes the same colour.
   - a line from each ticket to each ticket that waits on it: red while it blocks, amber while under way, green once closed.

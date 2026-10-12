@@ -36,7 +36,7 @@
   --radius-s: 4px;     /* code, chips, controls, focus rings */
   --control-size: 30px;
   --pad: 18px;         /* a row's side padding */
-  --agent: 14px;       /* an agent icon, left of a Now row */
+  --agent: 14px;       /* an agent icon, left of a Current row */
   --agent-gap: 20px;   /* between an agent icon and its row */
   --ease: .15s;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -466,7 +466,7 @@ details.sec > summary h2 { display: flex; align-items: center; gap: 10px; }
 .seq { overflow: hidden; border-bottom: 0; }
 .nowlist > *, .seq > details { margin: 0; border: 0; border-bottom: var(--border); border-radius: 0; }
 
-/* The Now list does not clip, so the agent icons left of it show: its first and last rows take its corners, and the
+/* The Current list does not clip, so the agent icons left of it show: its first and last rows take its corners, and the
    last row leaves the bottom line to the list. */
 .nowlist { --inner: calc(var(--radius) - 1px); }
 .nowlist > :first-child { border-top-left-radius: var(--inner); border-top-right-radius: var(--inner); }
@@ -529,7 +529,7 @@ details.sec > summary h2 { display: flex; align-items: center; gap: 10px; }
   .agent.busy::before { animation: none; }
 }
 
-/* ---------- actions: the user's tasks, above Now; closed ones in Reference ----------
+/* ---------- actions: the user's tasks, above Current; closed ones in Reference ----------
    Each is a panel as a decision is. Its title keeps to one line, opened too (hover: the whole title); Done and Drop
    sit at the end of its head. */
 

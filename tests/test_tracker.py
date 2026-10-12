@@ -371,7 +371,7 @@ class Moves(unittest.TestCase):
             self.assertIn("move: rev — review requested", run(*t, "context", "S-1"))
             page = viewer.main_html(tr)
             self.assertIn('<span class="chip move s-you">you: draft</span>', page)
-            self.assertIn("Now · 2 · 1 your move", page)
+            self.assertIn("Current · 2 · 1 your move", page)
 
             seen = session.watch(tr, [tr.lookup("S-1")])
             prs[0] = pull(11, branch="f1", decision="APPROVED", reviews=[
@@ -2042,7 +2042,7 @@ class Delete(unittest.TestCase):
 
 class Actions(unittest.TestCase):
     """A user's action: a task the agent cannot or should not do. The agent adds it with `tracker act`; the user's
-    word closes it, from the CLI or the viewer's Done and Drop. Open ones show above Now and in the brief; closed
+    word closes it, from the CLI or the viewer's Done and Drop. Open ones show above Current and in the brief; closed
     ones go to Reference."""
 
     def setUp(self):

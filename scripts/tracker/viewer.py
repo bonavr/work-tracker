@@ -204,7 +204,7 @@ def clock(ts: float) -> str:
 
 
 def agent_icon(sessions: list[Live]) -> Html:
-    """Left of a Now row, the agent sessions on its work: a ring that spins while one of them works (busy) and stays
+    """Left of a Current row, the agent sessions on its work: a ring that spins while one of them works (busy) and stays
     still while all are idle (they wait for the user)."""
     if not sessions:
         return NONE
@@ -576,7 +576,7 @@ def now_html(tr: Tracker) -> Html:
         text = f"Watched by {w['who']} since {clock(w['since'])}" if w["running"] else \
             f"Watch by {w['who']} ended {clock(w['ended'])}"
         now.append(Html('<p class="watch{}">{}</p>').format("" if w["running"] else " ended", text))
-    return sec("now", "Now", f"{busy}" + (f" · {yours} your move" if yours else "") + agents_n,
+    return sec("now", "Current", f"{busy}" + (f" · {yours} your move" if yours else "") + agents_n,
                Html("<div class=nowlist>{}</div>").format(NONE.join(now)), True) if now else NONE
 
 
@@ -619,7 +619,7 @@ def action_html(tr: Tracker, a: Record, buttons: bool) -> Html:
 
 
 def actions_html(tr: Tracker) -> Html:
-    """The user's open actions, above Now so they are seen first; none open, no section."""
+    """The user's open actions, above Current so they are seen first; none open, no section."""
     acts = tr.open_actions()
     return sec("actions", "Your actions", len(acts), NONE.join(action_html(tr, a, not tr.archived) for a in acts),
                True) if acts else NONE
