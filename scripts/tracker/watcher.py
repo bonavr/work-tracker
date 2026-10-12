@@ -14,9 +14,9 @@ import time
 from pathlib import Path
 
 from .model import (ARCHIVE, HOME, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, atomic_write, commits_logged, die,
-    files_hash, locked, short, to_trash, whose_move, Tracker)
+    files_hash, locked, short, to_trash, Tracker)
 from .session import (CLAUDE_SESSIONS, SESSIONS_DIR, alive, drop_session, live_sessions, load_session, match_cwd,
-    session_id, Live)
+    session_id, ticket_facts, Live)
 from .contract import check
 from .views import start_text
 from .github import budget, sync
@@ -101,13 +101,9 @@ Event = tuple[str, bool, str]
 
 
 def snapshot(tr: Tracker) -> dict:
-    """The facts no log line holds: per ticket its stage, move, `next` and where it can start; the `check` errors."""
+    """The facts no log line holds: per ticket its `ticket_facts` and where it can start; the `check` errors."""
     starts = {t.id: start_text(tr, s) for t, s in tr.startable()}
-    tickets = {}
-    for t in tr.tickets:
-        move = whose_move(tr, t)
-        tickets[t.id] = {"stage": t.stage, "next": str(t.get("next") or ""), "start": starts.get(t.id, ""),
-                         **({"move": move.text(), "rank": move.rank, "mine": move.mine} if move else {})}
+    tickets = {t.id: {**ticket_facts(tr, t), "start": starts.get(t.id, "")} for t in tr.tickets}
     return {"tickets": tickets, "errors": check(tr)[0]}
 
 

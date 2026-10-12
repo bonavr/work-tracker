@@ -23,7 +23,7 @@ from .model import (BLOCKER, DEFAULT_LABELS, EVIDENCE, EVIDENCE_DIR, HOME, ISSUE
     Record, Tracker)
 from .git import branch_of, contains, default_branches, worktree_key
 from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_session, find_tracker, in_repos,
-    load_session, locate, mark_up_to_date, match_cwd, no_tracker, on_branch, record_commits, remember, resolve,
+    locate, mark_up_to_date, match_cwd, no_tracker, on_branch, own_change, record_commits, remember, resolve,
     save_session, session_id, session_tracker, tracker_at, trackers_for_repo, watch, work_dir)
 from .contract import check, migrate, rules_lines
 from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, HISTORY_LAST, ISSUE_HOW, brief, context_lines, dep_lines,
@@ -1364,15 +1364,8 @@ def own_changes(run) -> None:
     m = match_cwd(work_dir(), sid) if sid else None
     before = watch(m.tracker, m.focus) if m and m.focus else None
     run()
-    if before is None:
-        return
-    tr = Tracker(m.tracker.root)
-    after = watch(tr, [t for t in (tr.lookup(x.id) for x in m.focus) if t])
-    entry = load_session(sid)
-    if entry.get("seen_for") == [t.id for t in m.focus]:
-        seen = entry.get("seen", {})
-        seen.update({k: v for k, v in after.items() if before.get(k) != v})
-        save_session(sid, seen=seen)
+    if before is not None:
+        own_change(sid, m, before)
 
 
 # The positional that an id list can swallow: `log --ref A B "msg"` gives the list "msg" too, as argparse's usage line

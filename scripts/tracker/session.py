@@ -492,46 +492,61 @@ def on_branch(args) -> tuple[Match, Path]:
 
 # ---------------------------------------------------------------- watch
 
-def watch(tr: Tracker, tickets: list[Record]) -> dict[str, list[str]]:
-    """What a session saw of its tickets, to tell it what changed since: of its own tickets the stage and a move that
-    is its own (a move that goes to a reviewer asks nothing of it); of their dependencies the stage and Carry forward;
-    of their decisions the status and answer."""
+def ticket_facts(tr: Tracker, t: Record) -> dict:
+    """What a change report compares of a ticket: its stage, `next`, Carry forward (a hash) and move (its text, its
+    rank in MOVE_RULE, and whether it is this side's). The prompt hook (`watch`) and `tracker watch` (`snapshot`)
+    both read it."""
+    move = whose_move(tr, t)
+    return {"stage": t.stage, "next": str(t.get("next") or ""),
+            "carry": hashlib.sha1("\n".join(t.carry_forward).encode()).hexdigest()[:10],
+            **({"move": move.text(" — "), "rank": move.rank, "mine": move.mine} if move else {})}
+
+
+def watch(tr: Tracker, tickets: list[Record]) -> dict[str, dict]:
+    """What a session saw: its own tickets and their dependencies (`ticket_facts`), and the decisions that touch them
+    (status and answer), each with its role."""
     seen = {}
     for t in tickets:
-        move = whose_move(tr, t)
-        seen[t.id] = ["own", t.stage, move.text(" — ") if move and move.mine else ""]
+        seen[t.id] = {"role": "own", **ticket_facts(tr, t)}
         for d in tr.deps(t):
             if d.kind == "ticket" and d.ident not in seen:
-                cf = hashlib.sha1("\n".join(d.rec.carry_forward).encode()).hexdigest()[:10]
-                seen[d.ident] = ["dep", d.rec.stage, cf]
+                seen[d.ident] = {"role": "dep", **ticket_facts(tr, d.rec)}
         for d in tr.decisions_for(t):
-            seen[d.id] = ["decision", d.get("status", "open"), resolution(d)]
+            seen[d.id] = {"role": "decision", "status": d.get("status", "open"), "answer": resolution(d)}
     return seen
 
 
+def own_move(facts: dict) -> str:
+    """A ticket's move when it is this side's; a move that goes to a reviewer asks nothing of the session."""
+    return facts.get("move", "") if facts.get("mine") else ""
+
+
 def changes_since(tr: Tracker, old: dict, new: dict) -> list[str]:
+    """What another session or GitHub changed since `old` (`watch`): of the session's own tickets a move that becomes
+    its own and their end; of their dependencies the stage and Carry forward; of their decisions the status."""
     out = []
     for ident, now in new.items():
         was = old.get(ident)
-        if was == now:
+        if was == now or was is not None and not isinstance(was, dict):  # an older version's is no baseline
             continue
-        rec = tr.lookup(ident)
-        if now[0] == "decision":
+        role = now["role"]
+        if role == "decision":
             if not was:
-                out.append(f"{ident} {now[1]} now touches this work: {rec.get('title')}")
-            elif stage_of("decision", now[1]).closed:
-                out.append(f"{ident} {'re-' if stage_of('decision', was[1]).closed else ''}settled: {now[2]}")
+                out.append(f"{ident} {now['status']} now touches this work: {tr.lookup(ident).get('title')}")
+            elif stage_of("decision", now["status"]).closed:
+                again = "re-" if stage_of("decision", was.get("status")).closed else ""
+                out.append(f"{ident} {again}settled: {now['answer']}")
             else:
-                out.append(f"{ident} is {now[1]} again")
+                out.append(f"{ident} is {now['status']} again")
         elif not was:
-            out.append(f"now waits on {ident} ({now[1]})")
+            out.append(f"now waits on {ident} ({now['stage']})")
         else:
             # The session's own ticket changes stage by its own doing, or sync's: only its end is news.
-            if was[1] != now[1] and (now[0] != "own" or stage_of("ticket", now[1]).closed):
-                out.append(f"{ident} is now {now[1]}")
-            if now[0] == "own" and len(was) > 2 and was[2] != now[2] and now[2]:  # older sessions kept no move
-                out.append(f"{ident} move now: {now[2]}")
-            if now[0] == "dep" and was[2:] != now[2:]:
+            if was.get("stage") != now["stage"] and (role != "own" or stage_of("ticket", now["stage"]).closed):
+                out.append(f"{ident} is now {now['stage']}")
+            if role == "own" and own_move(now) and own_move(now) != own_move(was):
+                out.append(f"{ident} move now: {own_move(now)}")
+            if role == "dep" and was.get("carry") != now["carry"]:
                 out.append(f"{ident} Carry forward changed (`tracker context {ident}`)")
     return out
 
@@ -580,14 +595,27 @@ def remember(sid: str, m: Match, cwd: str | Path) -> None:
         save_session(sid, **fields)
 
 
+def own_change(sid: str, m: Match, before: dict) -> None:
+    """A write command this session ran: count what it changed (`before`: `watch` before it) as seen."""
+    count_own(sid, m, lambda k, v, seen: before.get(k) != v)
+
+
 def own_edit(sid: str, m: Match, ident: str) -> None:
     """A tracker file this session edited by hand: count its record's change, and anything it newly makes the session
-    watch, as seen, so the prompt hook does not report them as another session's."""
+    watch, as seen."""
+    count_own(sid, m, lambda k, v, seen: k == ident or k not in seen)
+
+
+def count_own(sid: str, m: Match, picked) -> None:
+    """Count the session's own change as seen, so the prompt hook reports only other sessions' and GitHub's: the
+    entries of `watch` now that `picked(key, value, seen)` names."""
     entry = load_session(sid)
     if entry.get("seen_for") != [t.id for t in m.focus]:
         return
-    seen, now = entry.get("seen", {}), watch(m.tracker, m.focus)
-    seen.update({k: v for k, v in now.items() if k == ident or k not in seen})
+    tr = Tracker(m.tracker.root)
+    now = watch(tr, [t for t in map(tr.lookup, entry["seen_for"]) if t])
+    seen = entry.get("seen", {})
+    seen.update({k: v for k, v in now.items() if picked(k, v, seen)})
     save_session(sid, seen=seen)
 
 

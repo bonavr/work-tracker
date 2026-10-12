@@ -353,10 +353,13 @@ class Moves(unittest.TestCase):
             self.assertEqual(session.changes_since(tr, seen, session.watch(tr, [tr.lookup("S-1")])),
                              ["S-1 move now: you — approved by rev; ready to merge"])
         # Of the session's own tickets, only a move that becomes its own and a ticket's end are news.
-        own = {"S-1": ["own", "in-progress", ""]}
-        for now, said_ in ((["own", "in-review", ""], []), (["own", "merged", ""], ["S-1 is now merged"]),
-                           (["own", "in-progress", "you — checks failing"], ["S-1 move now: you — checks failing"])):
-            self.assertEqual(session.changes_since(tr, own, {"S-1": now}), said_)
+        own = {"S-1": {"role": "own", "stage": "in-progress", "move": "rev — review requested", "mine": False}}
+        for now, said_ in (({"stage": "in-review"}, []), ({"stage": "merged"}, ["S-1 is now merged"]),
+                           ({"stage": "in-progress", "move": "you — checks failing", "mine": True},
+                            ["S-1 move now: you — checks failing"])):
+            self.assertEqual(session.changes_since(tr, own, {"S-1": {"role": "own", **now}}), said_)
+        self.assertEqual(session.changes_since(tr, {"S-1": ["own", "todo", ""]}, {"S-1": {"role": "own", **now}}),
+                         [])  # an older version's entry is no baseline
 
 
     def test_stale_sync_refreshes_in_the_background(self):
@@ -1656,7 +1659,7 @@ class Watch(unittest.TestCase):
         run(*self.t, "decide", "Pick a store", "--refs", "W-2")
         lines = w.poll(now)
         w1 = next(x for x in lines if " W-1: " in x)
-        for fact in ("todo → in-progress", "move: you: no PR yet", "Built the parser", "next: Test it", "+5 commits"):
+        for fact in ("todo → in-progress", "move: you — no PR yet", "Built the parser", "next: Test it", "+5 commits"):
             self.assertIn(fact, w1)
         self.assertNotIn("!", "".join(lines))  # the agent's own work: nothing needs the user
         self.assertIn("W-3: can start now: stack on feat/W-1", "".join(lines))
@@ -1667,7 +1670,7 @@ class Watch(unittest.TestCase):
         tr.lookup("W-1").save({"pr": "12", "pr_state": "open"})
         tr.save_state({**tr.raw_state(), "prs": {"#12": {"review": "changes", "changes": ["rev"]}}})
         lines = w.poll(now)
-        self.assertRegex(lines[0], r"^\d\d:\d\d ! W-1: in-progress → in-review · move: you: changes requested by rev$")
+        self.assertRegex(lines[0], r"^\d\d:\d\d ! W-1: in-progress → in-review · move: you — changes requested by rev$")
         self.assertEqual(w.poll(now), [])  # said once
         ticket(self.root, "W-9", depends_on=["W-99"])
         self.assertIn("! check: ", "".join(w.poll(now)))
@@ -1721,7 +1724,7 @@ class Watch(unittest.TestCase):
         running("ui", "idle", now - watcher.IDLE_S - 60)
         w = self.watcher()
         first = "\n".join(w.claim(now))
-        self.assertIn("! W-1 in-progress · move: you: no PR yet · agent api busy 0 min · agent ui idle 11 min", first)
+        self.assertIn("! W-1 in-progress · move: you — no PR yet · agent api busy 0 min · agent ui idle 11 min", first)
         self.assertEqual(w.poll(now), [])  # the summary said it: the agents on W-1, and that ui waits
 
         late = now + watcher.BUSY_S + 1
