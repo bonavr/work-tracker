@@ -979,12 +979,24 @@ class Tracker:
     def __init__(self, root: Path):
         self.root = root
         self.slug = root.name
-        readme = root / "README.md"
-        text = readme.read_text() if readme.exists() else ""
-        lines, self.readme_body = split_frontmatter(text)
-        self.meta, problems = parse_meta(lines)
-        self.readme_problems = frontmatter_problems(text) + problems
+        path = root / "README.md"
+        # The README as a record, which `set tracker`, the body edits and `migrate` change as they change a ticket; a
+        # tracker moved away meanwhile has none.
+        self.readme = load_record(path, "tracker") if path.exists() else Record(path, "tracker", {}, "",
+                                                                                frontmatter_problems(""))
         self._kinds: dict[str, list[Record]] = {}
+
+    @property
+    def meta(self) -> dict:
+        return self.readme.meta
+
+    @property
+    def readme_body(self) -> str:
+        return self.readme.body
+
+    @property
+    def readme_problems(self) -> list[str]:
+        return self.readme.problems
 
     def records_of(self, kind: str) -> list[Record]:
         """The records of one kind, by id. Each kind is read on first use: a hook that only matches a branch never
@@ -1042,8 +1054,7 @@ class Tracker:
 
     @property
     def labels(self) -> list[str]:
-        extra = self.meta.get("labels") or []
-        return list(dict.fromkeys(DEFAULT_LABELS + (extra if isinstance(extra, list) else [extra])))
+        return list(dict.fromkeys(DEFAULT_LABELS + self.readme.list("labels")))
 
     @property
     def schema(self) -> int:
@@ -1054,8 +1065,7 @@ class Tracker:
 
     @property
     def repos(self) -> list[str]:
-        repo = self.meta.get("repo") or []
-        return repo if isinstance(repo, list) else [repo]
+        return self.readme.list("repo")
 
     def repo_of(self, t: Record) -> str:
         """The repo a ticket's branch and PR live in: its own `repo`, or the tracker's only one."""
@@ -1068,10 +1078,6 @@ class Tracker:
     def headline(self) -> str:
         """`title · status · owner`, the one line that names the work everywhere."""
         return " · ".join(str(x) for x in [self.title, self.meta.get("status"), self.meta.get("owner")] if x)
-
-    def readme(self) -> Record:
-        """The README as a record, which `set tracker`, the body edits and `migrate` change as they change a ticket."""
-        return load_record(self.root / "README.md", "tracker")
 
     def index(self) -> dict:
         """Ids and Issue ids, then (as asked for) each ticket's dependencies and each record's waiting tickets. Built

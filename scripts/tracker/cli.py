@@ -434,7 +434,7 @@ def record_for(args, ident: str) -> tuple[Tracker, Record]:
     """A record of any kind, or the README for `tracker` / `readme`."""
     if ident.lower() in ("readme", "tracker"):
         tr = resolve(args)
-        return tr, tr.readme()
+        return tr, tr.readme
     return locate(args, ident)
 
 

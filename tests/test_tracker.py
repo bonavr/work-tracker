@@ -864,7 +864,7 @@ class Upgrade(unittest.TestCase):
         t = ("--tracker", s)
         run("init", s, "--title", "Old", "--owner", "me")
         tr = model.Tracker(model.HOME / s)
-        tr.readme().save({"schema": 1})
+        tr.readme.save({"schema": 1})
         words = {"T-1": "High", "T-2": "p0", "T-3": "Lowest", "T-4": "Someday"}
         for ident, word in words.items():
             run(*t, "new", ident, "--title", ident)
@@ -2113,7 +2113,7 @@ class Actions(unittest.TestCase):
         self.assertIn("This tracker's instructions (README ## Instructions; follow them):\nWhen a feedback ticket's PR "
                       "opens, add one reply action per story.", brief)
         long = "\n".join(f"- rule {i}: " + "x" * 90 for i in range(40))
-        self.tr().readme().rewrite(self.root.joinpath("README.md").read_text().replace(
+        self.tr().readme.rewrite(self.root.joinpath("README.md").read_text().replace(
             "When a feedback ticket's PR opens, add one reply action per story.", long))
         text = views.instructions(self.tr())
         self.assertLess(len(text), views.BRIEF_INSTRUCTIONS_CHARS + 200)
@@ -2228,7 +2228,7 @@ class Values(unittest.TestCase):
             keys = {k: v for k, v in r.meta.items() if k in old or k == "closed_at"}
             r.save({**{k: None for k in keys}, **{old[k]: "2026-09-01" for k in keys if k in old}})
         tr.lookup("T-1").save({"issue_created": "2026-08-30T10:00:00Z"})
-        readme = tr.readme()
+        readme = tr.readme
         readme.save({"created_at": None, "created": "2026-08-01", "schema": 2})
         warnings = "\n".join(cli.check(self.tr())[1])
         self.assertIn("frontmatter key 'updated' is retired — run `tracker migrate`", warnings)

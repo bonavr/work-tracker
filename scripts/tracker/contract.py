@@ -343,7 +343,7 @@ def migrate(tr: Tracker, apply: bool) -> list[str]:
             out.append(f"{d.id}: resolved=(removed) (the date is on the ## Resolution line)")
             if apply:
                 d.save({"resolved": None})
-    for r in [tr.readme(), *tr.records]:
+    for r in [tr.readme, *tr.records]:
         upd = renamed_keys(r)
         if upd:
             out.append(f"{r.path.name}: " + ", ".join(f"{k}={'(removed)' if v is None else format_value(v)}"
@@ -361,12 +361,12 @@ def migrate(tr: Tracker, apply: bool) -> list[str]:
         out.append(f"README.md: labels += {', '.join(extra)} (labels in use that are not defaults)")
         if apply:
             own = [x for x in tr.labels if x not in DEFAULT_LABELS]
-            tr.readme().save({"labels": own + extra})
+            tr.readme.save({"labels": own + extra})
     if tr.schema < SCHEMA:
         out.append(f"README.md: schema={SCHEMA} (the tracker format this version writes)")
         if apply:
-            tr.readme().save({"schema": SCHEMA})
-    for r in [tr.readme(), *tr.records]:
+            tr.readme.save({"schema": SCHEMA})
+    for r in [tr.readme, *tr.records]:
         unknown = [k for k in r.meta if k not in KEYS[r.kind] and k not in RETIRED_KEYS[r.kind]]
         if unknown:
             out.append(f"{r.path.name}: unknown keys {', '.join(unknown)} — not changed; remove or rename by hand")
