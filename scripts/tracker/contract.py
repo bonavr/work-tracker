@@ -247,10 +247,6 @@ def rules_lines(tr: Tracker | None) -> list[str]:
     ]
 
 
-def exact(tr: Tracker, ident: str) -> Record | None:
-    return next((r for r in tr.records if norm_id(r.id) == norm_id(ident)), None)
-
-
 # Schema 1 kept an issue's priority in its issue tracker's words; these become levels, as P0-P4 do. Any other word
 # goes, and the issue is read again.
 PRIORITY_WORDS = {"urgent": 0, "highest": 0, "critical": 0, "blocker": 0, "high": 1, "medium": 2, "normal": 2,
@@ -308,7 +304,7 @@ def migrate(tr: Tracker, apply: bool) -> list[str]:
         # An external blocker was a link line of any label; it is now a Blocker line. Relabel first: an old Issue
         # line naming a blocker would otherwise make the blocker another name for this ticket.
         for ident in t.list("depends_on"):
-            if exact(tr, ident) or blocker_link(t, ident):
+            if tr.by_id(ident) or blocker_link(t, ident):
                 continue
             named = next((x for x in t.links if names(x, ident)), None)
             if named:

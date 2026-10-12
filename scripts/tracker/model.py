@@ -525,12 +525,14 @@ README_KEYS = ["title", "repo", "status", "owner", "created_at"]  # required fro
 SCOPE_PARTS = ["In", "Out"]  # ### subsections of ## Scope
 OPEN_DECISIONS_WARN = 12  # more open than this and the list is carrying ticket-level questions
 
+RESOLVE = '`tracker decide D-<n> --resolve "..." --by <who>`'  # a decision answered
+DECIDED = '`tracker decide "<title>" --resolve "..." --by <who>`'  # a choice made on the spot, in one command
 DECISION_BAR = (
     "A decision is a direction choice: it changes the Goal or Scope, a ticket's plan, order or split, a contract "
     "between tickets, a product, design or architecture rule, or it needs someone else's sign-off. Record it with "
     "`tracker decide \"<title>\" --refs <ids> --question \"...\"` when it is raised, and resolve it with "
-    "`tracker decide D-<n> --resolve \"...\" --by <who>` when it is answered, including an answer given in chat "
-    "(a choice made on the spot is one command: `tracker decide \"<title>\" --resolve \"...\" --by <who>`). "
+    f"{RESOLVE} when it is answered, including an answer given in chat (a choice made on the spot is one command: "
+    f"{DECIDED}). "
     "A choice inside one ticket's build (implementation detail, review fix, naming, styling) is not a decision: "
     "it goes in that ticket's Plan, `next` or PR.")
 ACTION_BAR = (
@@ -1024,11 +1026,14 @@ class Tracker:
             self._index, self._index_key = {"ids": ids, "aliases": aliases, "deps": {}}, key
         return self._index
 
+    def by_id(self, ident: str) -> Record | None:
+        """The record of any kind with this id (a ticket first). Case and leading zeros do not count: `d-4` finds
+        D-04."""
+        return self.index()["ids"].get(norm_id(ident))
+
     def lookup(self, ident: str) -> Record | None:
-        """The record of any kind with this id (a ticket first), or the ticket whose Issue link names it. Case and
-        leading zeros do not count: `d-4` finds D-04."""
-        index, want = self.index(), norm_id(ident)
-        return index["ids"].get(want) or index["aliases"].get(want)
+        """`by_id`, else the ticket whose Issue link names the id."""
+        return self.by_id(ident) or self.index()["aliases"].get(norm_id(ident))
 
     def by_pr_or_branch(self, ident: str) -> Record | None:
         """The ticket whose PR is `#123` (`owner/name#123` when the tracker spans repos), or whose branch this is."""
@@ -1185,10 +1190,15 @@ class Tracker:
         out["pr_match"] = {k: v for k, v in state.get("pr_match", {}).items() if now - v.get("at", 0) < PR_MATCH_TTL_S}
         return {k: v for k, v in out.items() if v != {}}
 
+    def issue_reads(self) -> tuple[dict[str, float], float]:
+        """When `tracker issue` last read each ticket's issue fields, and when the viewer's Refresh asked for them
+        again (STATE_RULES["issues"])."""
+        issues = self.raw_state().get("issues", {})
+        return issues.get("read", {}), issues.get("requested", 0)
+
     def issues_to_read(self) -> list[Record]:
         """The tickets whose issue fields the model should read from their issue tracker (STATE_RULES["issues"])."""
-        issues = self.raw_state().get("issues", {})
-        read, asked = issues.get("read", {}), issues.get("requested", 0)
+        read, asked = self.issue_reads()
         return [t for t in self.tickets if t.aliases and (not t.closed and (
             not read.get(t.id) or read[t.id] < asked)
             or not read.get(t.id) and t.get("started_at"))]  # closed: once, for its wait time, if it has a start

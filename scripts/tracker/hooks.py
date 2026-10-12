@@ -10,7 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from .model import ISOLATION_RULE, STEP_MESSAGE, SYNC_MIN_INTERVAL_S, locked, set_branch, short, Tracker
+from .model import (DECIDED, ISOLATION_RULE, RESOLVE, STEP_MESSAGE, SYNC_MIN_INTERVAL_S, locked, set_branch, short,
+    Tracker)
 from .system import spawn
 from .git import default_branches
 from .session import (behind, branch_matches, changes_since, declined, drop_session, get_mark, hand_over, in_repos,
@@ -299,7 +300,7 @@ def hook_prompt(data: dict) -> None:
     ask = next_request(m, cwd, sid)
     if ask:
         lines.append(ask)  # it holds what the state line would say
-    asked = m.tracker.raw_state().get("issues", {}).get("requested", 0)
+    asked = m.tracker.issue_reads()[1]
     if asked and asked != entry.get("told_issues"):  # the viewer's Refresh: passed on once
         fields["told_issues"] = asked
         lines += [x for x in [issue_request(m.tracker, m.focus)] if x]
@@ -335,9 +336,8 @@ def hook_answered(data: dict) -> None:
     if approval_only(data.get("tool_input") or {}) or data.get("agent_id"):
         return
     if match_cwd(*where(data)):
-        emit_context("PostToolUse", "[work-tracker] If the answer settles a direction decision, record it: "
-                     "`tracker decide D-<n> --resolve \"...\" --by <who>`, or `tracker decide \"<title>\" --resolve "
-                     "\"...\" --by <who>` for one made on the spot.")
+        emit_context("PostToolUse", f"[work-tracker] If the answer settles a direction decision, record it: {RESOLVE}, "
+                     f"or {DECIDED} for one made on the spot.")
 
 
 def hook_subagent_start(data: dict) -> None:

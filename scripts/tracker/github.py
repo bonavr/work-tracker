@@ -4,7 +4,6 @@ ticket from its PR. Only this module knows GitHub's words; another forge's adapt
 
 from __future__ import annotations
 
-import datetime as dt
 import json
 import re
 import subprocess
@@ -12,8 +11,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from .model import (OPEN_PR, PR_MATCH_TTL_S, SYNC_MIN_INTERVAL_S, apply_prs, branch_entry, locked, pr_key, put_entry,
-    set_branch, Record, Tracker)
+from .model import (FORMS, OPEN_PR, PR_MATCH_TTL_S, SYNC_MIN_INTERVAL_S, apply_prs, branch_entry, locked, pr_key,
+    put_entry, set_branch, utc_seconds, Record, Tracker)
 from .git import cwd_repo, default_branches
 from .session import match_cwd, named_in, Match
 
@@ -125,7 +124,7 @@ def review_facts(pr: dict) -> dict:
         return [x for x in ((pr.get(key) or {}).get("nodes") or []) if x]
 
     def when(ts: str | None) -> int:
-        return int(dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()) if ts else 0
+        return (utc_seconds(FORMS["time"].read("", ts)) or 0) if ts else 0
 
     reviews = [r for r in nodes("latestReviews")
                if (r.get("author") or {}).get("login") and r["author"].get("__typename") != "Bot"]
@@ -156,7 +155,7 @@ def pr_of(pr: dict) -> dict:
     state = "merged" if pr["state"] == "MERGED" else "closed" if pr["state"] == "CLOSED" else \
         "draft" if pr["isDraft"] else "open"
     return {"number": pr["number"], "state": state, "base": pr["baseRefName"],
-            "merged_at": pr["mergedAt"][:19] + "Z" if pr.get("mergedAt") else ""}  # GitHub gives UTC to the second
+            "merged_at": FORMS["time"].read("merged_at", pr["mergedAt"]) if pr.get("mergedAt") else ""}
 
 
 def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) -> list[str]:

@@ -24,7 +24,7 @@ from .model import (EVIDENCE_DIR, FACTS, HOME, LIVE_SYNC_S, README_SECTIONS, ROO
     locked, sequence, show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep, Move,
     Record, Tracker)
 from .system import CLI, PACKAGE, PYTHON, WINDOWS, spawn
-from .session import ago, live_by_tracker, live_sessions, match_cwd, Live
+from .session import ago, handoff_where, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
 from .views import dep_facts, duration, pr_label, span_lines, stage_counts
 from .github import sync
@@ -557,8 +557,7 @@ def now_html(tr: Tracker) -> Html:
                         + agents_html(agents[t.id])))
     for key, h in handoffs.items():
         b = key.rpartition(":")[2] if one_repo else key  # a tracker that spans repos names the repo
-        where = f"at {h.get('head', '')[:9]}" + (", uncommitted changes" if h.get("dirty") else "")
-        head = named(f"Handoff on {b}", f'{ago(h.get("at", 0))}, {where}')
+        head = named(f"Handoff on {b}", handoff_where(h))
         now.append(item(f"handoff-{key}", head, md_inline(h.get("text", "")), attrs={"class": "handoff"}))
     busy = len(now)
     for x, m in live:
@@ -705,10 +704,8 @@ def issue_state(tr: Tracker) -> str:
     linked = [t for t in tr.tickets if t.aliases]
     if not linked:
         return ""
-    issues = tr.raw_state().get("issues", {})
-    read, asked = issues.get("read", {}), issues.get("requested", 0)
-    waiting = asked and any(not t.closed and read.get(t.id, 0) < asked for t in linked)
-    if waiting:
+    read, asked = tr.issue_reads()
+    if asked and any(not t.closed for t in tr.issues_to_read()):
         who = ("waiting for a session to read them" if live_sessions(tr.slug)
                else "no session on this tracker to read them")
         return f"issues: asked; {who}"

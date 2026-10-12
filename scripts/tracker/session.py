@@ -384,9 +384,14 @@ def branch_handoff(tr: Tracker, repo: str, branch: str) -> dict | None:
     return branch_entry(tr.state().get("handoff", {}), repo, branch)
 
 
+def handoff_where(h: dict) -> str:
+    """`40 min ago, at 1a2b3c4d5 with uncommitted changes`: when a handoff was left, and the work's state then."""
+    dirty = " with uncommitted changes" if h.get("dirty") else ""
+    return f"{ago(h.get('at', 0))}, at {h.get('head', '')[:9]}{dirty}"
+
+
 def handoff_line(h: dict, label: str = "handoff") -> str:
-    where = f"at {h.get('head', '')[:9]}" + (" with uncommitted changes" if h.get("dirty") else "")
-    return f"{label} ({ago(h.get('at', 0))}, {where}; the next `step` or `synced` clears it): {h.get('text', '')}"
+    return f"{label} ({handoff_where(h)}; the next `step` or `synced` clears it): {h.get('text', '')}"
 
 
 def ago(ts: float) -> str:
