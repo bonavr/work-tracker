@@ -975,12 +975,13 @@ class Hooks(unittest.TestCase):
 
         # The same in a repo the tracker names: the session links at its start, no question. No gh on PATH: the
         # hooks' PR sync reads nothing.
-        a, mine, nogh = slug(), repo("feat/L-1"), {"PATH": path}
+        a, nogh = slug(), {"PATH": path}
+        mine = repo(f"feat/{a}")
         subprocess.run(["git", "-C", str(mine), "remote", "add", "origin", "git@github.com:acme/auto.git"], check=True)
         with mock.patch.object(github, "gh", lambda *args, **kw: None):
             run("init", a, "--title", "Auto", "--owner", "me", "--repo", "acme/auto")
-            run("--tracker", a, "new", "L-1", "--title", "Auto work", "--branch", "feat/L-1")
-            run("--tracker", a, "set", "L-1", "status=in-progress", cwd=mine)
+            run("--tracker", a, "new", "U-1", "--title", "Auto work", "--branch", f"feat/{a}")
+            run("--tracker", a, "set", "U-1", "status=in-progress", cwd=mine)
         auto = said(hook("session-start", f"{sid}a", mine, nogh, source="startup"))
         self.assertIn(f"Linked this session to {a}", auto)
         self.assertIn("Linked at session start", auto)
@@ -1149,6 +1150,26 @@ class Hooks(unittest.TestCase):
         self.assertEqual([(x.name, x.status) for x in session.live_sessions(s)], [("native", "busy")])
         native.write_text(json.dumps({"sessionId": sid, "pid": -1}))
         self.assertEqual(session.live_sessions(s), [])  # a dead native process is not replaced by hook activity
+        session.session_activity(sid, "idle")
+        self.assertTrue(session.load_session(sid)["native"])
+        native.unlink()  # its process ended with no SessionEnd hook: it does not live on in its hook activity
+        self.assertEqual(session.live_sessions(s), [])
+
+        # A SessionEnd hook marks the session ended before its other work, which the host may cut short.
+        ended = f"sid{time.monotonic_ns()}"
+        session.save_session(ended, tracker=s, cwd=str(work))
+        session.session_activity(ended, "idle")
+        self.assertEqual([x.sid for x in session.live_sessions(s)], [ended])
+
+        def cut_short(data):
+            raise KeyboardInterrupt
+
+        with mock.patch.dict(hooks.HOOKS, {"session-end": cut_short}), mock.patch.dict(os.environ), \
+                mock.patch.object(hooks, "hook_input", return_value={"session_id": ended, "cwd": str(work)}):
+            with self.assertRaises(KeyboardInterrupt):
+                hooks.run_hook("session-end")
+        self.assertEqual(session.load_session(ended)["activity"]["status"], "ended")
+        self.assertEqual(session.live_sessions(s), [])
 
     def test_project_modules_do_not_run(self):
         """Python starts in the user's project: its json.py must not replace the stdlib's in the hooks or the CLI."""

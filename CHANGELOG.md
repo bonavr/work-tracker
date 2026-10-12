@@ -55,6 +55,7 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 
 ### Fixed
 
+- An agent session that ended without its end hook (its terminal closed, or Claude Code cut the hook short) no longer shows as open in the viewer and the watch for up to a day.
 - A setting that is not a whole number, such as `TRACKER_SYNC=2m`, no longer stops every `tracker` command and hook: it gives a warning and uses the default.
 - Viewer: after a PR sync fails (`gh` missing, offline or rate-limited), the server tries again after `TRACKER_SYNC` (2 min), not every 10 s while a page is open.
 - On a branch with commits that wait for a ticket to start, the hooks look for new commits once per HEAD, not at each message and each turn's end. Those hooks take about half the time.

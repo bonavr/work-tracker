@@ -629,7 +629,9 @@ def count_own(sid: str, m: Match, picked) -> None:
 # Claude Code keeps one file per running `claude` process: <config dir>/sessions/<pid>.json, with its pid, sessionId,
 # cwd, name, status ("busy" while the model works, "idle" while it waits for the user) and when the status last
 # changed (statusUpdatedAt, epoch ms). Other hosts use the activity recorded by their hooks. An ended session or
-# one with no hook activity for a day does not count. A session with a process file is judged by that file alone.
+# one with no hook activity for a day does not count. A session with a process file is judged by that file alone,
+# and once its hooks saw one (`native`), so is the session after the file is gone: a session that ended with no
+# SessionEnd hook (its terminal closed; the hook cut short) leaves its last activity behind.
 
 CLAUDE_SESSIONS = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude").expanduser() / "sessions"
 ACTIVITY_MAX_AGE_S = 86400
@@ -641,14 +643,18 @@ def claude_sessions() -> list[dict]:
 
 
 def session_activity(sid: str, status: str) -> None:
-    """Keep a tracked session's status from its hooks, and when the status last changed."""
+    """Keep a tracked session's status from its hooks, and when the status last changed; and whether Claude Code
+    keeps a process file for it (`native`), until it is seen to."""
     entry = load_session(sid)
     if not entry.get("tracker"):
         return
     now = time.time()
     old = entry.get("activity", {})
     since = old.get("since", now) if old.get("status") == status else now
-    save_session(sid, activity={"status": status, "since": since, "at": now})
+    native = entry.get("native") or None
+    if not native and status != "ended":
+        native = any(str(c.get("sessionId")) == sid for c in claude_sessions()) or None
+    save_session(sid, activity={"status": status, "since": since, "at": now}, native=native)
 
 
 @dataclass
@@ -698,6 +704,8 @@ def live_by_tracker(slugs: set[str] | None = None) -> dict[str, list[Live]]:
         if f.stem in native:
             continue
         entry = load_session(f.stem)
+        if entry.get("native"):  # its process file is gone: it ended
+            continue
         try:
             activity = entry.get("activity", {})
             status, since, at = activity["status"], float(activity["since"]), float(activity["at"])

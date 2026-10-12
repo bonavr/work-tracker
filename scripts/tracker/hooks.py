@@ -139,11 +139,12 @@ def hook_session_start(data: dict) -> None:
 
 
 def hook_session_end(data: dict) -> None:
-    """Log the last commits; a session that `/clear` ends leaves its tracker to the next one (`hand_over`)."""
-    hook_stop(data)
+    """A session that `/clear` ends leaves its tracker to the next one (`hand_over`); log the last commits. The
+    handover first: the host may cut a SessionEnd hook short."""
     if data.get("reason") == "clear":
         cwd, sid = where(data)
         hand_over(sid, cwd)
+    hook_stop(data)
 
 
 def adopt_branch(m: Match, cwd: str | Path) -> None:
@@ -386,9 +387,11 @@ def run_hook(event: str) -> None:
     try:
         sid = where(data)[1]
         os.environ["TRACKER_SESSION"] = sid  # command_context, session_id() and spawned commands read it
-        HOOKS[event](data)
         status = {"session-start": "idle", "prompt": "busy", "stop": "idle", "session-end": "ended"}.get(event)
-        if status and not data.get("agent_id"):
+        if event == "session-end" and not data.get("agent_id"):
+            session_activity(sid, status)  # first: the host may cut a SessionEnd hook short
+        HOOKS[event](data)
+        if status and event != "session-end" and not data.get("agent_id"):
             session_activity(sid, status)
     except (Exception, SystemExit) as exc:  # a hook must never break the session; exit 2 would block it
         print(f"work-tracker hook {event} failed: {exc}", file=sys.stderr)
