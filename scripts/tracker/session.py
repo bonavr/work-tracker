@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .model import (HOME, SAFE_NAME, STAGES, all_trackers, append_log, archived_at, read_json, branch_entry,
-    commits_text, die, locked, put_entry, resolution, short, stage_of, state_key, tracker_at, whose_move, write_json,
-    Record, Tracker)
+    commits_text, die, load_record, locked, put_entry, resolution, short, stage_of, state_key, tracker_at, whose_move,
+    write_json, Record, Tracker)
 from .system import alive
 from .git import branch_of, changed_files, cwd_repo, default_branches, git, head_of, worktree, worktree_key
 
@@ -354,9 +354,10 @@ def set_mark(tr: Tracker, cwd: str | Path, branch: str, passed: tuple[int, str] 
 
 
 def next_key(m: Match) -> str:
-    """The `next` of the branch's tickets as the files hold it now: when it changes, `next` was written."""
-    tr = Tracker(m.tracker.root)
-    pairs = sorted((r.id, str(r.get("next") or "")) for r in (tr.lookup(t.id) for t in m.tickets) if r)
+    """The `next` of the branch's tickets as their files hold it now, which another session may have written since `m`
+    was read: when it changes, `next` was written. Only those files are read again."""
+    now = (load_record(t.path, "ticket") for t in m.tickets if t.path.exists())
+    pairs = sorted((r.id, str(r.get("next") or "")) for r in now)
     return hashlib.sha1(json.dumps(pairs).encode()).hexdigest()[:10]
 
 
@@ -574,7 +575,8 @@ def lag(m: Match, cwd: str | Path) -> Lag:
     mark = get_mark(m.tracker, cwd, m.branch) if m.branch else None
     if not mark:
         return Lag([], [], 0)
-    return Lag(new_commits(cwd, mark), changed_files(cwd, mark.get("at") or 0), mark.get("at") or 0, behind(m, mark))
+    commits = [] if mark["head"] == head_of(cwd) else new_commits(cwd, mark)  # at the mark: one git call, not five
+    return Lag(commits, changed_files(cwd, mark.get("at") or 0), mark.get("at") or 0, behind(m, mark))
 
 
 def remember(sid: str, m: Match, cwd: str | Path) -> None:

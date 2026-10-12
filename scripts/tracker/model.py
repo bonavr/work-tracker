@@ -11,7 +11,6 @@ import os
 import re
 import stat
 import sys
-import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -478,6 +477,10 @@ SYNC_MIN_INTERVAL_S = 600  # a session's hooks sync at most this often
 LIVE_SYNC_S = int(os.environ.get("TRACKER_SYNC") or os.environ.get("TRACKER_VIEWER_SYNC")
                   or os.environ.get("TRACKER_WATCH_SYNC") or 120)
 PR_MATCH_TTL_S = 600  # how long a branch's PR, once asked, is not asked again
+# The viewer's one port, so a bookmark or a page left open works again once a viewer runs. 0: a free port each start,
+# and the hooks start no viewer. VIEWER_FILE names the running viewer's port and pid.
+VIEWER_PORT = int(os.environ.get("TRACKER_VIEWER_PORT", "7316"))
+VIEWER_FILE = HOME / ".viewer.json"
 
 
 def dated(text: str) -> str:
@@ -794,8 +797,8 @@ def atomic_file(path: Path):
         if not stat.S_ISREG(previous.st_mode):
             die(f"refusing to replace {path}: not a regular file")
         mode = stat.S_IMODE(previous.st_mode)
-    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
-    tmp = Path(name)
+    tmp = path.parent / f".{path.name}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)  # Windows: no CRLF
     try:
         with os.fdopen(fd, "wb") as f:
             yield f

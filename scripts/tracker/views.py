@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime as dt
 import time
 from pathlib import Path
-from statistics import median
 
 from .markdown import section, strip_comments
 from .model import (BIN, FACTS, ISOLATION_RULE, KINDS, LOG_LINE, OPEN_STAGES, README_INSTRUCTIONS, SCALES, SPANS,
@@ -371,6 +370,7 @@ def duration(seconds: float) -> str:
 def span_lines(tr: Tracker, now: float | None = None) -> list[str]:
     """A line per span (SPANS) that some ticket has: the median, the fastest ticket, and the median of the spans that
     ended in the last 7 days."""
+    from statistics import median  # here: the hooks never show a span
     now = time.time() if now is None else now
     lines = []
     for name, (_, end, what) in SPANS.items():

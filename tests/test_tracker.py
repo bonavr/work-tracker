@@ -1534,20 +1534,27 @@ class IssueFields(unittest.TestCase):
         self.assertIn("default-src 'self'", headers["Content-Security-Policy"])
 
     def test_a_tracked_session_starts_the_viewer_when_none_runs(self):
-        with mock.patch.object(viewer, "spawn") as spawn:
-            viewer.keep_viewer()  # TRACKER_VIEWER_PORT=0: the hooks start none
+        with mock.patch.object(hooks, "spawn") as spawn:
+            hooks.keep_viewer()  # TRACKER_VIEWER_PORT=0: the hooks start none
             self.assertFalse(spawn.called)
-            with mock.patch.object(viewer, "VIEWER_PORT", 7316):
-                with mock.patch.object(viewer, "VIEWER_FILE", Path(BASE) / "no-viewer.json"):
-                    viewer.keep_viewer()
+            with mock.patch.object(hooks, "VIEWER_PORT", 7316):
+                with mock.patch.object(hooks, "VIEWER_FILE", Path(BASE) / "no-viewer.json"):
+                    hooks.keep_viewer()
                 spawn.assert_called_once_with("serve", "--port", "7316")
                 spawn.reset_mock()
                 with socket.create_server(("127.0.0.1", 0)) as running:
                     file = Path(BASE) / "viewer.json"
                     file.write_text(json.dumps({"port": running.getsockname()[1], "pid": os.getpid()}))
-                    with mock.patch.object(viewer, "VIEWER_FILE", file):
-                        viewer.keep_viewer()
+                    with mock.patch.object(hooks, "VIEWER_FILE", file):
+                        hooks.keep_viewer()
                 self.assertFalse(spawn.called)
+        # A hook loads no module only a rare command or the viewer needs, and keep_viewer none of the viewer's
+        code = (f"import sys; sys.path.insert(0, {str(ROOT / 'scripts')!r}); import tracker.hooks; "
+                "tracker.hooks.keep_viewer(); print(*sys.modules)")
+        loaded = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True,
+                                check=True).stdout.split()
+        self.assertEqual([x for x in ("tracker.viewer", "tracker.cli", "statistics", "tempfile", "shutil",
+                                      "concurrent.futures") if x in loaded], [])
 
 
 class Spans(unittest.TestCase):

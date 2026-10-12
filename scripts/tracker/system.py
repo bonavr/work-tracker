@@ -4,7 +4,6 @@ tracker's own files are model's."""
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -71,6 +70,7 @@ def windows_trash(path: Path) -> None:
 def xdg_trash(path: Path) -> None:
     """The freedesktop.org home trash: the file in Trash/files, and a .trashinfo in Trash/info that says where it
     came from, under a name no other item there has."""
+    import shutil
     import urllib.parse
     trash = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "Trash"
     (trash / "files").mkdir(parents=True, exist_ok=True)

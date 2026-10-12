@@ -19,10 +19,10 @@ import time
 from typing import Callable, NamedTuple
 
 from .markdown import headings, section_block, strip_comments, without_section, Link
-from .model import (EVIDENCE_DIR, FACTS, HOME, LIVE_SYNC_S, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, all_trackers,
-    archived_at, archived_trackers, branch_entry, close_action, day_text, due_date, files_hash, level, level_name,
-    locked, sequence, show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep, Move,
-    Record, Tracker)
+from .model import (EVIDENCE_DIR, FACTS, LIVE_SYNC_S, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, VIEWER_FILE,
+    all_trackers, archived_at, archived_trackers, branch_entry, close_action, day_text, due_date, files_hash, level,
+    level_name, locked, sequence, show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep,
+    Move, Record, Tracker)
 from .system import CLI, PACKAGE, PYTHON, WINDOWS, spawn
 from .session import ago, handoff_where, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
@@ -732,12 +732,8 @@ def page_html(title: str, body: Html, slug: str = "", ver: str = "") -> str:
 
 # ---------------------------------------------------------------- viewer server
 
-VIEWER_FILE = HOME / ".viewer.json"
 # Longer than a browser's once-a-minute timer throttling in background tabs, so a hidden tab keeps it alive.
 VIEWER_IDLE_S = int(os.environ.get("TRACKER_VIEWER_IDLE", "180"))
-# One port, so a bookmark or a page left open works again once a viewer runs. 0: a free port each start, and the hooks
-# start no viewer.
-VIEWER_PORT = int(os.environ.get("TRACKER_VIEWER_PORT", "7316"))
 SESSION_CHECK_S = 30  # how often an idle viewer looks for a tracked agent session that keeps it running
 
 
@@ -766,18 +762,6 @@ def viewer_ping() -> tuple[int, str, int] | None:
             return port, r.read().decode(), int(info["pid"])
     except (OSError, ValueError, KeyError):
         return None
-
-
-def keep_viewer() -> None:
-    """From a tracked session's hooks: start the viewer when none runs, so the user's pages and bookmarks work while
-    they work with an agent. A connect only, no HTTP: the hook stays fast."""
-    import socket
-    if not VIEWER_PORT:
-        return
-    try:
-        socket.create_connection(("127.0.0.1", int(read_json(VIEWER_FILE)["port"])), timeout=0.5).close()
-    except (OSError, ValueError, KeyError, TypeError):
-        spawn("serve", "--port", str(VIEWER_PORT))
 
 
 def viewer_port() -> int | None:

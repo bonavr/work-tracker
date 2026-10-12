@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from .model import (DECIDED, ISOLATION_RULE, RESOLVE, STEP_MESSAGE, SYNC_MIN_INTERVAL_S, locked, set_branch, short,
-    Tracker)
+from .model import (DECIDED, ISOLATION_RULE, RESOLVE, STEP_MESSAGE, SYNC_MIN_INTERVAL_S, VIEWER_FILE, VIEWER_PORT,
+    locked, read_json, set_branch, short, Tracker)
 from .system import spawn
 from .git import default_branches
 from .session import (behind, branch_matches, changes_since, declined, drop_session, get_mark, hand_over, in_repos,
@@ -28,8 +28,15 @@ PR_TRIGGER = re.compile(rf"{PR_COMMAND.pattern}|\bgit\s+push\b")  # the forge's 
 
 
 def keep_viewer() -> None:
-    from . import viewer  # here: only a tracked session's hook loads the viewer's code
-    viewer.keep_viewer()
+    """Start the viewer when none runs, so the user's pages and bookmarks work while they work with an agent. A
+    connect only, with no HTTP and no viewer code: the hook stays fast."""
+    import socket
+    if not VIEWER_PORT:
+        return
+    try:
+        socket.create_connection(("127.0.0.1", int(read_json(VIEWER_FILE)["port"])), timeout=0.5).close()
+    except (OSError, ValueError, KeyError, TypeError):
+        spawn("serve", "--port", str(VIEWER_PORT))
 
 
 def hook_input() -> dict:
