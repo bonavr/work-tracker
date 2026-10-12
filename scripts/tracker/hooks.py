@@ -11,9 +11,9 @@ import time
 from pathlib import Path
 
 from .model import (DECIDED, ISOLATION_RULE, RESOLVE, STEP_MESSAGE, SYNC_MIN_INTERVAL_S, VIEWER_FILE, VIEWER_PORT,
-    locked, read_json, set_branch, short, Tracker)
-from .system import spawn
-from .git import default_branches
+    locked, plugin_version, read_json, set_branch, short, Tracker)
+from .system import env_int, spawn
+from .git import cwd_repo, default_branches
 from .session import (behind, branch_matches, changes_since, declined, drop_session, get_mark, hand_over, in_repos,
     inside_home, lag, load_session, match_cwd, own_edit, record_commits, remember, save_session, session_activity,
     take_over, watch, work_dir, Lag, Match)
@@ -28,13 +28,17 @@ PR_TRIGGER = re.compile(rf"{PR_COMMAND.pattern}|\bgit\s+push\b")  # the forge's 
 
 
 def keep_viewer() -> None:
-    """Start the viewer when none runs, so the user's pages and bookmarks work while they work with an agent. A
-    connect only, with no HTTP and no viewer code: the hook stays fast."""
+    """Start the viewer when none runs, or when the one that runs is an older release of the plugin (after an update,
+    the old copy's viewer would serve its old code while sessions run), so the user's pages and bookmarks work while
+    they work with an agent. A connect only, with no HTTP and no viewer code: the hook stays fast."""
     import socket
     if not VIEWER_PORT:
         return
     try:
-        socket.create_connection(("127.0.0.1", int(read_json(VIEWER_FILE)["port"])), timeout=0.5).close()
+        info = read_json(VIEWER_FILE)
+        if list(info.get("version") or []) < plugin_version():
+            raise ValueError("an older release's viewer")  # `serve` stops it and takes its port
+        socket.create_connection(("127.0.0.1", int(info["port"])), timeout=0.5).close()
     except (OSError, ValueError, KeyError, TypeError):
         spawn("serve", "--port", str(VIEWER_PORT))
 
@@ -87,10 +91,14 @@ def offer(found: list[Match]) -> tuple[str, str]:
 def sure_link(found: list[Match], cwd: str | Path, sid: str) -> Match | None:
     """The match a session with no tracker links at its start without asking the user: one tracker only, and a
     ticket's `branch` names this branch, which is not a default branch (where many works share a branch, the user
-    chooses). Never a session with the watch: it stays on no tracker."""
+    chooses), in this repo by name (a ticket with no repo matches any repo, and branch names repeat across repos).
+    Never a session with the watch: it stays on no tracker."""
     if len(found) != 1 or found[0].how != "branch" or not sid or granted(sid):
         return None
-    return found[0] if found[0].branch not in default_branches(cwd) else None
+    m, slug = found[0], cwd_repo(cwd)
+    if not slug or any(m.tracker.repo_of(t).lower() != slug for t in m.tickets):
+        return None
+    return m if m.branch not in default_branches(cwd) else None
 
 
 AUTO_LINKED = ("Linked at session start: this branch is the branch of {ids}. If the user says this session is not "
@@ -221,7 +229,7 @@ def hook_edit(data: dict) -> None:
             own_edit(sid, m, edited.stem)
 
 
-NUDGE_EVERY = max(1, int(os.environ.get("TRACKER_NUDGE_EVERY", "5")))
+NUDGE_EVERY = env_int("TRACKER_NUDGE_EVERY", 5, least=1)
 
 
 def state_line(m: Match, work: Lag) -> str:

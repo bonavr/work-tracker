@@ -21,9 +21,9 @@ from typing import Callable, NamedTuple
 from .markdown import headings, section_block, strip_comments, without_section, Link
 from .model import (EVIDENCE_DIR, FACTS, LIVE_SYNC_S, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, VIEWER_FILE,
     all_trackers, archived_at, archived_trackers, branch_entry, close_action, day_text, due_date, files_hash, level,
-    level_name, locked, sequence, show_value, sort_key, span, tracker_at, whose_move, read_json, write_json, Busy, Dep,
-    Move, Record, Tracker)
-from .system import CLI, PACKAGE, PYTHON, WINDOWS, spawn
+    level_name, locked, plugin_version, sequence, show_value, sort_key, span, tracker_at, whose_move, read_json,
+    write_json, Busy, Dep, Move, Record, Tracker)
+from .system import CLI, PACKAGE, PYTHON, WINDOWS, env_int, spawn
 from .session import ago, handoff_where, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
 from .views import dep_facts, duration, pr_label, span_lines, stage_counts
@@ -733,7 +733,7 @@ def page_html(title: str, body: Html, slug: str = "", ver: str = "") -> str:
 # ---------------------------------------------------------------- viewer server
 
 # Longer than a browser's once-a-minute timer throttling in background tabs, so a hidden tab keeps it alive.
-VIEWER_IDLE_S = int(os.environ.get("TRACKER_VIEWER_IDLE", "180"))
+VIEWER_IDLE_S = env_int("TRACKER_VIEWER_IDLE", 180)
 SESSION_CHECK_S = 30  # how often an idle viewer looks for a tracked agent session that keeps it running
 
 
@@ -963,7 +963,9 @@ def serve(port: int = 0) -> None:
         def log_message(self, *args):
             pass
 
-    for _ in range(20):  # after a restart the old socket may take a moment to free the port
+    if viewer_port():  # a viewer on this code runs; one on another copy of the plugin is stopped first
+        return
+    for _ in range(20):  # after a restart, or a viewer stopped, the old socket may take a moment to free the port
         try:
             server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
             break
@@ -976,7 +978,7 @@ def serve(port: int = 0) -> None:
     server.last_seen = time.monotonic()
     server.viewed = {}  # slug -> when a page last asked for it
     server.restart = False
-    write_json(VIEWER_FILE, {"port": server.server_address[1], "pid": os.getpid()})
+    write_json(VIEWER_FILE, {"port": server.server_address[1], "pid": os.getpid(), "version": plugin_version()})
 
     def needed() -> bool:
         """A page asked lately, or an agent session is on a tracker: its user can open a page at any time."""

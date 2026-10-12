@@ -18,6 +18,21 @@ CLI = [*PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv.pop(1)); from tra
        str(PACKAGE.parent)]
 
 
+def env_int(names: str | tuple[str, ...], default: int, least: int = 0) -> int:
+    """A whole-number setting from the first of `names` that is set, and at least `least`. A value that is not a
+    whole number gives `default`, with a warning on stderr: a typo in a setting stops no command and no hook."""
+    for name in (names,) if isinstance(names, str) else names:
+        text = os.environ.get(name, "").strip()
+        if not text:
+            continue
+        try:
+            return max(least, int(text))
+        except ValueError:
+            print(f"work-tracker: {name}={text!r} is not a whole number; using {default}", file=sys.stderr)
+            return default
+    return default
+
+
 def spawn(*args: str) -> None:
     """Start `tracker <args>` in the background: it outlives this process and writes to no terminal."""
     detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS

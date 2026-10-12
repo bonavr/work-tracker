@@ -13,7 +13,7 @@ Talk to the agent. It runs the `tracker` CLI for you.
 
 1. **Create a tracker.** Ask the agent, for example: "Make a tracker for the payments rework in acme/api, with tickets for the schema, the API and the admin page." Give it the documents the work answers to (spec, issue, design): they go in the tracker's Context. Name the GitHub repo, so PR state syncs.
 2. **Start a session on it.** Say "work on the payments tracker", or type `/work-tracker:tracker start payments` in Claude Code or `$work-tracker:tracker start payments` in Codex. The agent gets a brief: where the work is, what is under way, what it waits on.
-   - A new session on a feature branch that a ticket of one tracker names links to that tracker by itself, and says so. To undo, tell the agent it is not that work: it unlinks, and the branch gets no link or offer for a day.
+   - A new session on a feature branch that a ticket of one tracker names, in a repo that tracker names, links to that tracker by itself, and says so. To undo, tell the agent it is not that work: it unlinks, and the branch gets no link or offer for a day.
    - Anywhere else on a branch with an open ticket (a default branch such as `main`, a branch whose name only holds a ticket id, a branch of tickets in more than one tracker), the session asks at your first message whether to link it. Answer yes, or "Not now" (no offer on that branch for a day).
    - After `/clear`, the new session stays on the tracker (and the `--on` ticket) of the session it replaces.
 3. **Work as usual.** The agent records steps, decisions and pauses as they happen. The hooks log each commit and keep PR state current. You write nothing yourself.
@@ -143,7 +143,7 @@ Environment variables. All are optional.
 | `TRACKER_NUDGE_EVERY` | 5 | messages between state lines |
 | `TRACKER_VIEWER_IDLE` | 180 | seconds before an unused viewer stops |
 | `TRACKER_VIEWER_PORT` | 7316 | the viewer's port; 0: a free port each start, and the hooks start no viewer |
-| `TRACKER_SYNC` | 120 | seconds between GitHub syncs while a page or a watch is open (a session's hooks sync at most every 10 min) |
+| `TRACKER_SYNC` | 120 | seconds (at least 30) between GitHub syncs while a page or a watch is open (a session's hooks sync at most every 10 min) |
 | `TRACKER_WATCH_IDLE` | 600 | seconds before an idle agent that waits on you is reported |
 | `TRACKER_WATCH_BUSY` | 2700 | seconds a busy agent can record nothing before it is reported |
 

@@ -6,7 +6,7 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 
 ### Added
 
-- Viewer: a tracker menu (top left) lists every tracker; pick one to open it. Its ⋯ menu archives it, or deletes it to the system's trash after a confirm. A tracker with an agent session or a watch on it cannot be deleted.
+- Viewer: a tracker menu (top left) lists every tracker; pick one to open it. Its ⋯ menu archives it, or deletes it to the system's trash after a confirm. A tracker with an agent session or a watch on it cannot be archived or deleted.
 - `tracker delete <slug>` moves a tracker to the system's trash from a terminal. It refuses in an agent session.
 - `tracker archive <slug>` puts a tracker away: no list, lookup, hook or sync reads it, and the viewer still opens it. `tracker unarchive <slug>` brings it back, and `tracker list --archived` lists them. The viewer's tracker menu lists the archived trackers in a closed section at its bottom.
 - Viewer: a page whose tracker was deleted says so instead of reloading.
@@ -23,6 +23,7 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 
 ### Changed
 
+- **Upgrade in this order:** update the plugin in every host that shares your trackers (such as Claude Code and Codex), then run `tracker migrate` in each tracker. An older version does not refuse the new format: it writes the old key names into it. Lines marked **Breaking** below change a format, a flag or a setting.
 - Viewer: the Step column draws the dependency graph instead of a number: a dot per ticket in the column of its step, and a line to each ticket that waits on it, routed beside the other dots. A line that a longer chain already implies is left out. It is drawn again for any sort or filter.
 - Viewer: the graph shows the status that row colours showed before: a dot is blue when ready, amber when under way or stackable, red when blocked, and a ring when closed; a faded line is red while it blocks, amber while the ticket waited on is under way and green once it is closed. Ticket titles are plain text, and a ticket's id takes its dot's colour. Hover a row to see only the chains it waits on and unblocks.
 - Viewer: the sequence starts in a depth-first dependency order, so a chain of tickets stays together; Step puts it back.
@@ -32,27 +33,29 @@ The changes a user of the plugin sees, per release. How to add one: CLAUDE.md.
 - Viewer: the Status column comes before Group.
 - Viewer: a closed ticket's row is dimmed in every column but Step, not only its title.
 - Viewer: a status has one colour everywhere, its tag's: in its tag, as text (a dependency, a decision), as a ticket's id and in the graph.
-- A new session on a feature branch that a ticket of one tracker names links to that tracker by itself, without the question. On a default branch such as `main`, or when the match is less sure, the session still asks. To undo, tell the agent the session is not that work.
+- **Breaking:** a new session on a feature branch that a ticket of one tracker names, in a repo that tracker names, links to that tracker by itself, without the question. On a default branch such as `main`, in a repo the tracker does not name, or when the match is less sure, the session still asks. To undo, tell the agent the session is not that work. `/work-tracker:watch` in a session that linked by itself unlinks it, and the session watches.
 - After `/clear`, the new session stays on the tracker of the session it replaces, with its `--on` ticket. No need to link again.
 - `tracker start --decline` also unlinks a session that linked by itself.
 - The brief is shorter. It lists more than 3 closed tickets of a branch as a count (`also 9 done`). It gives the README's Context documents without their URLs (`tracker show tracker --section context` has them). It shows `check` warnings only for this session's tickets and the README, and errors as a count; `tracker check` has the rest.
 - Issue fields: an open ticket's fields are read once, not again each day. The viewer's Refresh still has them read again. The request in the brief is one line, with this session's tickets first; `tracker issue` says how to record them.
 - Viewer: the server keeps one port (7316, `TRACKER_VIEWER_PORT`), so bookmarks and open pages keep working: `http://127.0.0.1:7316/` lists the trackers.
+- Viewer: after a plugin update, the next hook stops the viewer of the older version and starts one on the new version.
 - PR sync asks GitHub only for the PRs of the started tickets, in one call, not for the repo's newest 300 PRs. A sync takes about half the time, so a session's start and the hook after `git push` or `gh pr` wait less.
 - Viewer: a tracked agent session starts the server, and the server runs while an agent session is on a tracker; no need to ask the agent to open a page first. A page reloads itself when the server is back.
-- Every time the tracker writes is UTC to the second, in a key that ends `_at`: `updated` is now `updated_at`, `opened` and the README's `created` are now `created_at`, and `issue_created` is now `issue_created_at`. Run `tracker migrate` to rename them (format 3). The views show each time as its day.
-- `tracker issue` with no id lists the tickets whose issue fields are to read (before: `tracker issue --due`). `--due` now records the issue's due day.
+- **Breaking:** every time the tracker writes is UTC to the second, in a key that ends `_at`: `updated` is now `updated_at`, `opened` and the README's `created` are now `created_at`, and `issue_created` is now `issue_created_at`. Run `tracker migrate` to rename them (format 3). It also has the agent read each open ticket's issue again, for its size and due day. The views show each time as its day.
+- **Breaking:** `tracker issue` with no id lists the tickets whose issue fields are to read (before: `tracker issue --due`). `--due` now records the issue's due day.
 - The agent maps an issue's priority and estimate by what they mean on that issue tracker's scale, not by a raw number from its API. A value that means none ("No priority") leaves the ticket's value empty. A size is an amount of work (XS an hour or two to XL more than a week), so a time estimate maps too.
 - Each write logs what the history needs, so the agent runs no `tracker log` after one. A status change through `tracker set` or `tracker step --done` writes its own log line. `tracker add`, `put` and `drop` take `--why`, which logs why a section changes; a started ticket's Plan changes only with it.
 - Any write that leaves a ticket with nothing to wait on says so, `tracker wait <id> off` too. A write no longer ends with "log line written".
 - `tracker index`, `tracker context` and the viewer give what a record waits on, blocks and touches in the same words, each with its state: `waits on`, `stacks on`, `unblocks`, `blocks`, `touches`. An opened action lists its dates as a ticket does.
 - `tracker context`, the brief and `tracker ready` show a ticket's priority and size, and the viewer's opened ticket lists them with its other facts. `tracker ready` lists the most urgent first. In `tracker context` and the brief, a ticket's branch, repo, priority, size and due day share one line.
-- `TRACKER_SYNC` sets how often an open viewer page or a watch syncs with GitHub. It replaces `TRACKER_VIEWER_SYNC` and `TRACKER_WATCH_SYNC`, which still work for now.
+- `TRACKER_SYNC` sets how often an open viewer page or a watch syncs with GitHub. It replaces `TRACKER_VIEWER_SYNC` and `TRACKER_WATCH_SYNC`, which still work for now, but the first one set gives both intervals. The least value is 30 seconds.
 - The brief, `tracker index` and the hooks say "PR" where they said "GitHub": `Synced PR state`, `Whose move (PRs read 5 min ago)`.
 - `tracker watch` writes a move as `tracker context` does: `move: you — checks failing`.
 
 ### Fixed
 
+- A setting that is not a whole number, such as `TRACKER_SYNC=2m`, no longer stops every `tracker` command and hook: it gives a warning and uses the default.
 - Viewer: after a PR sync fails (`gh` missing, offline or rate-limited), the server tries again after `TRACKER_SYNC` (2 min), not every 10 s while a page is open.
 - On a branch with commits that wait for a ticket to start, the hooks look for new commits once per HEAD, not at each message and each turn's end. Those hooks take about half the time.
 - Viewer: a tracker that spans repos lists them under its title as `a/x, b/y`, not as a Python list.

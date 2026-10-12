@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .model import (ARCHIVE, HOME, LIVE_SYNC_S, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, read_json, commits_logged,
     die, files_hash, locked, short, write_json, Tracker)
-from .system import alive, to_trash
+from .system import alive, env_int, to_trash
 from .session import (SESSIONS_DIR, drop_session, live_sessions, load_session, match_cwd, claude_sessions, session_id,
     ticket_facts, Live)
 from .contract import check
@@ -25,8 +25,8 @@ WATCH_DIR = HOME / ".watch"  # <slug>.json: a tracker's watcher and what it repo
 GRANTS = WATCH_DIR / "grants"
 POLL_S = 2  # the tracker's files and the sessions: local and cheap
 SETTLE_S = 5  # after a change, wait this long for the rest of it (a step writes more than one file): one batch
-IDLE_S = int(os.environ.get("TRACKER_WATCH_IDLE", "600"))  # an agent idle this long waits on the user
-BUSY_S = int(os.environ.get("TRACKER_WATCH_BUSY", "2700"))  # busy this long with nothing recorded: it may be stuck
+IDLE_S = env_int("TRACKER_WATCH_IDLE", 600)  # an agent idle this long waits on the user
+BUSY_S = env_int("TRACKER_WATCH_BUSY", 2700)  # busy this long with nothing recorded: it may be stuck
 CATCH_UP_S = 12 * 3600  # a watcher that starts again this soon reports what changed while it was stopped
 REARM_S = 600  # a session's watch runs `--once` again and again: between two runs it still watches
 # A move of this rank or more urgent needs the user (MOVE_RULE: conflicts, failing checks, changes requested, an open

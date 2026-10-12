@@ -911,8 +911,24 @@ class Upgrade(unittest.TestCase):
         run(*t, "migrate")
         tr = model.Tracker(model.HOME / s)
         self.assertEqual([tr.lookup(x).meta.get("priority") for x in words], ["1", "0", "4", None])
-        self.assertEqual(re.findall(r"^(T-\d+) ", run(*t, "issue"), re.M), ["T-4"])  # read again
+        # Read again: T-4 for its priority, and every open ticket for the size and due day format 3 reads
+        self.assertEqual(re.findall(r"^(T-\d+) ", run(*t, "issue"), re.M), ["T-1", "T-2", "T-3", "T-4"])
         self.assertNotIn("priority", run(*t, "check"))
+
+    def test_migrate_to_format_3_reads_open_issues_again(self):
+        s = slug()
+        t = ("--tracker", s)
+        run("init", s, "--title", "Old", "--owner", "me")
+        for ident in ("T-1", "T-2"):
+            run(*t, "new", ident, "--title", ident)
+            run(*t, "add", ident, "link", f"Issue: [SC-{ident[2]} Story](https://issues.example/{ident[2]})")
+            run(*t, "issue", ident)
+        run(*t, "set", "T-2", "status=done")
+        model.Tracker(model.HOME / s).readme.save({"schema": 2})
+        self.assertIn("issue fields to read again for size and due: T-1\n", run(*t, "migrate", "--dry-run"))
+        run(*t, "migrate")
+        self.assertEqual(re.findall(r"^(T-\d+) ", run(*t, "issue"), re.M), ["T-1"])  # not the closed T-2
+        self.assertNotIn("read again", run(*t, "migrate"))  # once
 
 
 def hook(event: str, sid: str, cwd: Path, env: dict | None = None, **extra) -> dict | None:
@@ -953,22 +969,35 @@ class Hooks(unittest.TestCase):
         run("--tracker", s, "new", "H-9", "--title", "Named work")
         self.assertIn("host's question tool", said(hook("session-start", f"{sid}n", named, source="startup")))
 
-        # A feature branch that a ticket's `branch` names: the session links at its start, no question.
-        auto = said(hook("session-start", f"{sid}a", work, source="startup"))
-        self.assertIn(f"Linked this session to {s}", auto)
+        # A feature branch that a ticket's `branch` names, in a tracker that names no repo: branch names repeat
+        # across repos, so not sure, and asked.
+        self.assertIn("host's question tool", said(hook("session-start", f"{sid}r", work, source="startup")))
+
+        # The same in a repo the tracker names: the session links at its start, no question. No gh on PATH: the
+        # hooks' PR sync reads nothing.
+        a, mine, nogh = slug(), repo("feat/L-1"), {"PATH": path}
+        subprocess.run(["git", "-C", str(mine), "remote", "add", "origin", "git@github.com:acme/auto.git"], check=True)
+        with mock.patch.object(github, "gh", lambda *args, **kw: None):
+            run("init", a, "--title", "Auto", "--owner", "me", "--repo", "acme/auto")
+            run("--tracker", a, "new", "L-1", "--title", "Auto work", "--branch", "feat/L-1")
+            run("--tracker", a, "set", "L-1", "status=in-progress", cwd=mine)
+        auto = said(hook("session-start", f"{sid}a", mine, nogh, source="startup"))
+        self.assertIn(f"Linked this session to {a}", auto)
         self.assertIn("Linked at session start", auto)
         self.assertIn("Tracker protocol", auto)
-        self.assertEqual(session.load_session(f"{sid}a")["tracker"], s)
+        self.assertEqual(session.load_session(f"{sid}a")["tracker"], a)
         with mock.patch.dict(os.environ, {"TRACKER_SESSION": f"{sid}a"}):
-            self.assertIn(f"this session is off {s} now", run("start", "--decline", cwd=work))
+            self.assertIn(f"this session is off {a} now", run("start", "--decline", cwd=mine))
         self.assertNotIn("tracker", session.load_session(f"{sid}a"))
-        self.assertIsNone(hook("session-start", f"{sid}c", work, source="startup"))  # declined: no link, no offer
+        self.assertIsNone(hook("session-start", f"{sid}c", mine, nogh, source="startup"))  # declined: no link or offer
         (model.HOME / ".declined.json").unlink()
-        hook("session-start", f"{sid}w", work, source="startup")  # linked by itself; the user's watch wins
-        self.assertIn(f"off {s} now: it watches", said(hook("prompt", f"{sid}w", work, prompt="/work-tracker:watch")))
+        hook("session-start", f"{sid}w", mine, nogh, source="startup")  # linked by itself; the user's watch wins
+        self.assertIn(f"off {a} now: it watches",
+                      said(hook("prompt", f"{sid}w", mine, nogh, prompt="/work-tracker:watch")))
         self.assertTrue(watcher.granted(f"{sid}w"))
         self.assertNotIn("tracker", session.load_session(f"{sid}w"))
         watcher.set_grant(f"{sid}w", False)
+        run("archive", a)  # off every later lookup
 
         env = {**os.environ, "TRACKER_SESSION": sid}
         linked = subprocess.run([str(ROOT / "bin/tracker"), "start", s], cwd=work, env=env, capture_output=True,
@@ -1101,7 +1130,7 @@ class Hooks(unittest.TestCase):
                 self.assertEqual(session.session_id(), expected)
 
     def test_recent_activity(self):
-        sid, s, work = f"sid{time.monotonic_ns()}", slug(), repo("feat/A-1")
+        sid, s, work = f"sid{time.monotonic_ns()}", slug(), repo("feat/L-1")
         session.session_activity(sid, "busy")
         self.assertEqual(session.load_session(sid), {})  # untracked sessions have no activity file
         session.save_session(sid, tracker=s, cwd=str(work))
@@ -1553,10 +1582,17 @@ class IssueFields(unittest.TestCase):
                 spawn.reset_mock()
                 with socket.create_server(("127.0.0.1", 0)) as running:
                     file = Path(BASE) / "viewer.json"
-                    file.write_text(json.dumps({"port": running.getsockname()[1], "pid": os.getpid()}))
+                    info = {"port": running.getsockname()[1], "pid": os.getpid(), "version": model.plugin_version()}
+                    file.write_text(json.dumps(info))
                     with mock.patch.object(hooks, "VIEWER_FILE", file):
                         hooks.keep_viewer()
-                self.assertFalse(spawn.called)
+                        self.assertFalse(spawn.called)
+                        # A viewer of an older release (0.30 named none) serves its old code: a new one replaces it.
+                        for old in ([0], None):
+                            file.write_text(json.dumps({**info, "version": old}))
+                            hooks.keep_viewer()
+                            spawn.assert_called_once_with("serve", "--port", "7316")
+                            spawn.reset_mock()
         # A hook loads no module only a rare command or the viewer needs, and keep_viewer none of the viewer's
         code = (f"import sys; sys.path.insert(0, {str(ROOT / 'scripts')!r}); import tracker.hooks; "
                 "tracker.hooks.keep_viewer(); print(*sys.modules)")

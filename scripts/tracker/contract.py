@@ -323,6 +323,11 @@ def migrate(tr: Tracker, apply: bool) -> list[str]:
                                                for k, v in upd.items()))
             if apply:
                 t.save(upd)
+    if tr.schema < 3:  # format 3 takes size and due from the issue, and reads an open ticket's issue only once
+        again = [t.id for t in tr.tickets if t.aliases and not t.closed and t.id not in reread]
+        if again:
+            out.append(f".state.json: issue fields to read again for size and due: {', '.join(again)}")
+            reread += again
     if reread and apply:
         state = tr.raw_state()
         for ident in reread:

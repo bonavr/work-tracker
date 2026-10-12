@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
-from .system import PACKAGE, WINDOWS
+from .system import PACKAGE, WINDOWS, env_int
 from .markdown import (BULLET, bullets, format_value, frontmatter_problems, link_ident, parse_links, parse_meta,
     render_frontmatter, section, section_span, split_frontmatter, strip_comments, Link)
 
@@ -474,13 +474,13 @@ STALE_TICKET_DAYS = 7
 SYNC_MIN_INTERVAL_S = 600  # a session's hooks sync at most this often
 # While a page or a watch shows the work live, it syncs this often. TRACKER_VIEWER_SYNC and TRACKER_WATCH_SYNC are the
 # names 0.30 gave it, one each: read until a release drops them.
-LIVE_SYNC_S = int(os.environ.get("TRACKER_SYNC") or os.environ.get("TRACKER_VIEWER_SYNC")
-                  or os.environ.get("TRACKER_WATCH_SYNC") or 120)
+LIVE_SYNC_S = env_int(("TRACKER_SYNC", "TRACKER_VIEWER_SYNC", "TRACKER_WATCH_SYNC"), 120, least=30)
 PR_MATCH_TTL_S = 600  # how long a branch's PR, once asked, is not asked again
 # The viewer's one port, so a bookmark or a page left open works again once a viewer runs. 0: a free port each start,
-# and the hooks start no viewer. VIEWER_FILE names the running viewer's port and pid.
-VIEWER_PORT = int(os.environ.get("TRACKER_VIEWER_PORT", "7316"))
+# and the hooks start no viewer. VIEWER_FILE names the running viewer's port, pid and plugin version.
+VIEWER_PORT = env_int("TRACKER_VIEWER_PORT", 7316)
 VIEWER_FILE = HOME / ".viewer.json"
+MANIFEST = ROOT / ".claude-plugin" / "plugin.json"
 
 
 def dated(text: str) -> str:
@@ -831,6 +831,14 @@ def read_json(path: Path) -> dict:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def plugin_version() -> list[int]:
+    """This copy of the plugin's release, as numbers to compare: [] when its manifest names none."""
+    try:
+        return [int(x) for x in str(read_json(MANIFEST).get("version", "")).split(".")]
+    except ValueError:
+        return []
 
 
 def write_json(path: Path, data: dict, indent: int = 1) -> None:
