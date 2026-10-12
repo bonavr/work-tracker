@@ -8,7 +8,6 @@ import json
 import re
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .model import (FORMS, OPEN_PR, PR_MATCH_TTL_S, SYNC_MIN_INTERVAL_S, apply_prs, branch_entry, locked, pr_key,
@@ -17,9 +16,7 @@ from .git import cwd_repo, default_branches
 from .session import match_cwd, named_in, Match
 
 NAME = "GitHub"  # the forge, where a text names it; the model and the views say "PR" only
-PR_FIELDS = "number,headRefName,state,isDraft,mergedAt,baseRefName,updatedAt,isCrossRepository"
-GH_LIST_LIMIT = 300  # newest PRs per repo in one call
-GH_LOOKUPS_MAX = 5  # single-PR calls per sync, for tickets whose PR is older than that list
+BRANCH_PRS_MAX = 10  # the newest PRs sync asks for per branch, forks' too: a branch name repeats across forks
 GH_TIMEOUT_S = 8  # one call
 _deadline: float | None = None  # no gh call runs past this (time.monotonic()); None: no limit
 # A `gh` command that changes a PR: the hooks sync after it (hooks.PR_TRIGGER).
@@ -33,10 +30,10 @@ def budget(seconds: float | None) -> None:
     _deadline = None if seconds is None else time.monotonic() + seconds
 
 
-def gh(*args: str, fields: str | None = PR_FIELDS, partial: bool = False):
-    """`gh <args> --json <fields>` (no `--json` when fields is None), parsed; None when gh is missing, fails, times
-    out, or the budget is spent. `partial`: a failed call's output still counts when it parses (GraphQL answers what
-    it can and names the errors)."""
+def gh(*args: str, fields: str | None = None, partial: bool = False):
+    """`gh <args>`, with `--json <fields>` when fields are given, parsed; None when gh is missing, fails, times out, or
+    the budget is spent. `partial`: a failed call's output still counts when it parses (GraphQL answers what it can
+    and names the errors)."""
     timeout = GH_TIMEOUT_S if _deadline is None else min(GH_TIMEOUT_S, _deadline - time.monotonic())
     if timeout < 1:
         return None
@@ -46,18 +43,6 @@ def gh(*args: str, fields: str | None = PR_FIELDS, partial: bool = False):
         return json.loads(r.stdout) if r.returncode == 0 or partial else None
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
-
-
-def gh_prs(repo: str) -> list[dict] | None:
-    return gh("pr", "list", "--repo", repo, "--state", "all", "--limit", str(GH_LIST_LIMIT))
-
-
-def gh_pr_of(repo: str, ticket: Record) -> dict | None:
-    """One ticket's PR, asked for on its own: by number, or by the ticket's branch."""
-    if ticket.get("pr"):
-        return gh("pr", "view", str(ticket.get("pr")), "--repo", repo)
-    prs = gh("pr", "list", "--repo", repo, "--state", "all", "--head", str(ticket.get("branch")))
-    return pick_pr(prs, ticket) if prs else None
 
 
 def pick_pr(prs: list[dict], ticket: Record) -> dict | None:
@@ -76,9 +61,10 @@ def own_prs(prs: list[dict]) -> list[dict]:
     return [p for p in prs if not p.get("isCrossRepository")]
 
 
-# What a ticket's move needs from each open PR (model.whose_move), for all of them in one GraphQL call.
-REVIEW_FIELDS = """fragment F on PullRequest {
-  isDraft reviewDecision mergeStateStatus
+# What sync reads of each PR: its own state, base and head (pr_of, pick_pr), and what a ticket's move needs
+# (review_facts, for model.whose_move).
+PR_FRAGMENT = """fragment F on PullRequest {
+  number headRefName state isDraft mergedAt baseRefName isCrossRepository reviewDecision mergeStateStatus
   reviewRequests(first: 20) { nodes { requestedReviewer {
     ... on User { login } ... on Team { name } ... on Bot { login } ... on Mannequin { login } } } }
   latestReviews(first: 50) { nodes { author { __typename login } state submittedAt } }
@@ -87,26 +73,38 @@ REVIEW_FIELDS = """fragment F on PullRequest {
 }"""
 
 
-def gh_facts(prs: set[tuple[str, int]]) -> dict[str, dict] | None:
-    """The PR_FACTS of open PRs, by `pr_key`, from one call; None when gh fails. A PR GitHub does not find is left
-    out."""
-    if not prs:
-        return {}
-    repos = sorted({repo for repo, _ in prs})
+def gh_prs(tr: Tracker, tickets: list[Record]) -> dict[str, list[dict] | None] | None:
+    """The PRs the tickets can be on, per repo, from one GraphQL call: a ticket's PR by its number, else the newest
+    BRANCH_PRS_MAX from its branch, each as PR_FRAGMENT reads it. None for a repo GitHub does not answer for, and in
+    place of all when gh fails. A PR GitHub does not find is left out."""
+    asked: dict[str, tuple[set[str], set[str]]] = {}  # repo: (PR numbers, branches)
+    for t in tickets:
+        pr = str(t.get("pr") or "")
+        if pr and not pr.isdigit():
+            continue  # it names no PR (pick_pr)
+        numbers, branches = asked.setdefault(tr.repo_of(t), (set(), set()))
+        (numbers if pr else branches).add(pr or str(t.get("branch")))
+    repos = sorted(asked)
     query = []
     for i, repo in enumerate(repos):
         owner, _, name = repo.partition("/")
-        pulls = " ".join(f"p{n}: pullRequest(number: {n}) {{ ...F }}" for r, n in sorted(prs) if r == repo)
-        query.append(f"r{i}: repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {pulls} }}")
-    got = gh("api", "graphql", "-f", f"query=query {{ {' '.join(query)} }} {REVIEW_FIELDS}", fields=None, partial=True)
+        numbers, branches = asked[repo]
+        fields = [f"p{n}: pullRequest(number: {n}) {{ ...F }}" for n in sorted(numbers, key=int)]
+        fields += [f"b{j}: pullRequests(headRefName: {json.dumps(b)}, first: {BRANCH_PRS_MAX}, orderBy: {{field: "
+                   "CREATED_AT, direction: DESC}) { nodes { ...F } }" for j, b in enumerate(sorted(branches))]
+        query.append(f"r{i}: repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {' '.join(fields)} }}")
+    got = gh("api", "graphql", "-f", f"query=query {{ {' '.join(query)} }} {PR_FRAGMENT}", partial=True)
     data = got.get("data") if isinstance(got, dict) else None
     if not isinstance(data, dict):
         return None
-    out = {}
-    for repo, n in prs:
-        pr = (data.get(f"r{repos.index(repo)}") or {}).get(f"p{n}")
-        if pr:
-            out[pr_key(repo, n)] = review_facts(pr)
+    out: dict[str, list[dict] | None] = {}
+    for i, repo in enumerate(repos):
+        found = data.get(f"r{i}")
+        if not isinstance(found, dict):
+            out[repo] = None
+            continue
+        prs = [x for alias, v in found.items() if v for x in (v.get("nodes") or [] if alias.startswith("b") else [v])]
+        out[repo] = list({p["number"]: p for p in prs if p}.values())
     return out
 
 
@@ -151,7 +149,7 @@ def review_facts(pr: dict) -> dict:
 
 
 def pr_of(pr: dict) -> dict:
-    """A PR as gh gives it (PR_FIELDS), in the tracker's words (model.apply_prs)."""
+    """A PR as gh gives it (PR_FRAGMENT), in the tracker's words (model.apply_prs)."""
     state = "merged" if pr["state"] == "MERGED" else "closed" if pr["state"] == "CLOSED" else \
         "draft" if pr["isDraft"] else "open"
     return {"number": pr["number"], "state": state, "base": pr["baseRefName"],
@@ -160,42 +158,29 @@ def pr_of(pr: dict) -> dict:
 
 def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) -> list[str]:
     """Pull PR state from GitHub: each ticket's PR into its frontmatter (`pr`, `pr_state`, `base`, `merged_at`), the
-    open PRs' PR_FACTS into .state.json `prs` (`model.apply_prs`). Returns change lines. GitHub is asked first,
-    without the lock; the tracker is then reloaded and written under it."""
+    open PRs' PR_FACTS into .state.json `prs` (`model.apply_prs`). Returns change lines. GitHub is asked first, in
+    one call (`gh_prs`) and without the lock; the tracker is then reloaded and written under it."""
     if not tr.repos:
         return []
     if not force and time.time() - tr.state().get("last_sync", 0) < min_interval:
         return []
-    # The open PRs the tickets know already: their review facts are asked for with the lists.
-    known = {(tr.repo_of(t), int(t.get("pr"))) for t in tr.tickets
-             if t.get("pr_state") in OPEN_PR and str(t.get("pr")).isdigit() and tr.repo_of(t)}
-    with ThreadPoolExecutor(len(tr.repos) + 1) as pool:  # at once: the lists and the known PRs' facts
-        asked = pool.submit(gh_facts, known)
-        prs_by_repo = dict(zip(tr.repos, pool.map(gh_prs, tr.repos)))
-        facts = asked.result()
-    failed = [repo for repo, prs in prs_by_repo.items() if prs is None]
+    # Only started work has a PR: a todo ticket on a branch that holds a PR is not in it yet. A merged PR is final: a
+    # later PR from a branch the ticket shared is other tickets' work.
+    tickets = [t for t in tr.tickets if t.started and t.get("pr_state") != "merged" and tr.repo_of(t) in tr.repos
+               and (t.get("branch") or t.get("pr"))]
+    prs_by_repo = gh_prs(tr, tickets) if tickets else {}
+    failed = (sorted({tr.repo_of(t) for t in tickets}) if prs_by_repo is None
+              else [repo for repo, prs in prs_by_repo.items() if prs is None])
     if failed:
         return [f"sync skipped: gh failed or timed out for {', '.join(failed)}"]
-    found, lookups = {}, 0
-    for t in tr.tickets:
+    found, facts = {}, {}
+    for t in tickets:
         repo = tr.repo_of(t)
-        # Only started work has a PR: a todo ticket on a branch that holds a PR is not in it yet. A merged PR is
-        # final: a later PR from a branch the ticket shared is other tickets' work.
-        if not t.started or t.get("pr_state") == "merged" or not repo or not (t.get("branch") or t.get("pr")):
-            continue
-        prs = prs_by_repo.get(repo, [])
-        pr = pick_pr(prs, t)
-        # The list holds only the newest PRs; ask for an older one on its own.
-        if not pr and len(prs) >= GH_LIST_LIMIT and lookups < GH_LOOKUPS_MAX:
-            lookups += 1
-            pr = gh_pr_of(repo, t)
+        pr = pick_pr(prs_by_repo.get(repo, []), t)
         if pr:
             found[t.id] = (repo, pr_of(pr))
-    opened = {(repo, int(pr["number"])) for repo, pr in found.values() if pr["state"] in OPEN_PR}
-    if facts is not None:
-        if opened - known:  # opened since the last sync
-            facts |= gh_facts(opened - known) or {}
-        facts = {k: v for k, v in facts.items() if k in {pr_key(repo, n) for repo, n in opened}}
+            if found[t.id][1]["state"] in OPEN_PR:
+                facts[pr_key(repo, pr["number"])] = review_facts(pr)
     with locked():
         return apply_prs(Tracker(tr.root), found, facts)
 

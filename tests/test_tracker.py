@@ -251,14 +251,32 @@ class MachineState(unittest.TestCase):
 
 
 def pull(number: int, **facts) -> dict:
-    """A PR as the review query answers it (github.REVIEW_FIELDS)."""
-    return {"isDraft": facts.get("draft", False), "reviewDecision": facts.get("decision"),
+    """A PR as sync's query answers it (github.PR_FRAGMENT)."""
+    return {"number": number, "headRefName": facts.get("branch", ""), "state": facts.get("state", "OPEN"),
+            "mergedAt": facts.get("merged_at"), "baseRefName": "main", "isCrossRepository": False,
+            "isDraft": facts.get("draft", False), "reviewDecision": facts.get("decision"),
             "mergeStateStatus": facts.get("merge", "CLEAN"),
             "reviewRequests": {"nodes": [{"requestedReviewer": {"login": x}} for x in facts.get("requested", [])]},
             "latestReviews": {"nodes": facts.get("reviews", [])},
             "reviewThreads": {"nodes": [{"isResolved": False}] * facts.get("threads", 0) + [{"isResolved": True}]},
             "commits": {"nodes": [{"commit": {"committedDate": facts.get("pushed", "2026-09-01T00:00:00Z"),
                                               "statusCheckRollup": {"state": facts.get("checks", "SUCCESS")}}}]}}
+
+
+def answers(prs: list[dict]):
+    """A fake `github.gh` for sync's one GraphQL call, on one repo: alias `p<n>` gets PR n, `b<j>` the PRs from its
+    branch, out of `prs` (each as `pull` makes it; change the list to change the answers). `.queries` keeps each
+    query."""
+    def gh(*args, fields=None, partial=False):
+        query = args[3]
+        gh.queries.append(query)
+        repo = {f"p{n}": next((p for p in prs if p["number"] == int(n)), None)
+                for n in re.findall(r"\bp(\d+): pullRequest\(", query)}
+        repo |= {f"b{j}": {"nodes": [p for p in prs if p["headRefName"] == b]}
+                 for j, b in re.findall(r'\bb(\d+): pullRequests\(headRefName: "([^"]*)"', query)}
+        return {"data": {"r0": repo}}
+    gh.queries = []
+    return gh
 
 
 class Moves(unittest.TestCase):
@@ -321,21 +339,18 @@ class Moves(unittest.TestCase):
         for i in (1, 2):
             run(*t, "new", f"S-{i}", "--title", f"Part {i}", "--branch", f"f{i}")
             run(*t, "set", f"S-{i}", "status=in-progress")
-        lists = [{"number": 10 + i, "headRefName": f"f{i}", "state": "OPEN", "isDraft": i == 2, "mergedAt": None,
-                  "baseRefName": "main", "updatedAt": ""} for i in (1, 2)]
-        answers = {11: pull(11, requested=["rev"]), 12: pull(12, draft=True)}
-        queries = []
-
-        def fake_gh(*args, fields=None, partial=False):
-            if args[:2] == ("pr", "list"):
-                return lists
-            queries.append(args[3])
-            return {"data": {"r0": {f"p{n}": answers[n] for n in answers if f"p{n}:" in args[3]}}}
-
-        with mock.patch.object(github, "gh", fake_gh):
+        run(*t, "new", "S-3", "--title", "Not started", "--branch", "f3")
+        fork = {**pull(13, branch="f1"), "isCrossRepository": True}
+        prs = [pull(11, branch="f1", requested=["rev"]), pull(12, branch="f2", draft=True), fork, pull(14, branch="f3")]
+        fake = answers(prs)
+        with mock.patch.object(github, "gh", fake):
             run(*t, "sync")
-            self.assertEqual(len(queries), 1)  # the PRs were new: asked for once the lists named them
+            # One call: the started tickets' PRs by their branches, with what their moves need
+            self.assertEqual(len(fake.queries), 1)
+            self.assertIn('b0: pullRequests(headRefName: "f1"', fake.queries[0])
+            self.assertNotIn('"f3"', fake.queries[0])
             tr = model.Tracker(model.HOME / s)
+            self.assertEqual([t.get("pr") for t in tr.tickets], ["11", "12", ""])  # not the fork's PR from f1
             self.assertEqual(set(tr.prs), {"a/x#11", "a/x#12"})
             index = run(*t, "index")
             self.assertIn("  you: draft — S-2\n  rev: review requested — S-1", index)
@@ -345,13 +360,19 @@ class Moves(unittest.TestCase):
             self.assertIn("Now · 2 · 1 your move", page)
 
             seen = session.watch(tr, [tr.lookup("S-1")])
-            answers[11] = pull(11, decision="APPROVED", reviews=[
+            prs[0] = pull(11, branch="f1", decision="APPROVED", reviews=[
                 {"author": {"__typename": "User", "login": "rev"}, "state": "APPROVED", "submittedAt": ""}])
             run(*t, "sync")
-            self.assertEqual(len(queries), 2)  # known PRs: asked for with the lists
+            self.assertEqual(len(fake.queries), 2)
+            self.assertIn("p11: pullRequest(number: 11)", fake.queries[1])  # a known PR: by its number
+            self.assertNotIn("pullRequests(", fake.queries[1])
             tr = model.Tracker(model.HOME / s)
             self.assertEqual(session.changes_since(tr, seen, session.watch(tr, [tr.lookup("S-1")])),
                              ["S-1 move now: you — approved by rev; ready to merge"])
+        # A repo GitHub does not answer for: nothing is written
+        with mock.patch.object(github, "gh", lambda *args, fields=None, partial=False: {"data": {"r0": None}}):
+            self.assertEqual(run(*t, "sync"), "sync skipped: gh failed or timed out for a/x\n")
+        self.assertEqual(set(model.Tracker(model.HOME / s).prs), {"a/x#11", "a/x#12"})
         # Of the session's own tickets, only a move that becomes its own and a ticket's end are news.
         own = {"S-1": {"role": "own", "stage": "in-progress", "move": "rev — review requested", "mine": False}}
         for now, said_ in (({"stage": "in-review"}, []), ({"stage": "merged"}, ["S-1 is now merged"]),
@@ -1557,12 +1578,14 @@ class Spans(unittest.TestCase):
         run("init", s, "--title", "Timed", "--owner", "me", "--repo", "a/x")
         run(*t, "new", "S-1", "--title", "Merging now", "--branch", "f1")
         run(*t, "set", "S-1", "status=in-progress")
-        lists = [{"number": 11, "headRefName": "f1", "state": "MERGED", "isDraft": False,
-                  "mergedAt": "2026-10-01T06:30:00Z", "baseRefName": "main", "updatedAt": ""}]
-        with mock.patch.object(github, "gh", lambda *args, fields=None, partial=False:
-                               lists if args[:2] == ("pr", "list") else {"data": {}}):
+        fake = answers([pull(11, branch="f1", state="MERGED", merged_at="2026-10-01T06:30:00Z")])
+        with mock.patch.object(github, "gh", fake):
             run(*t, "sync")
-        self.assertEqual(model.Tracker(model.HOME / s).lookup("S-1").get("merged_at"), "2026-10-01T06:30:00Z")
+            self.assertEqual(model.Tracker(model.HOME / s).lookup("S-1").get("merged_at"), "2026-10-01T06:30:00Z")
+            before = model.Tracker(model.HOME / s).raw_state()["last_sync"]
+            run(*t, "sync")  # a merged PR is final: no ticket to ask about, so GitHub is not asked
+            self.assertEqual(len(fake.queries), 1)
+            self.assertGreater(model.Tracker(model.HOME / s).raw_state()["last_sync"], before)
 
     def test_the_span_lines(self):
         s = slug()
