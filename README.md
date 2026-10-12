@@ -1,11 +1,16 @@
 # work-tracker
 
+This plugin is a work in progress.
+
 A Claude Code and Codex plugin that keeps the plan and progress of a piece of work (a feature, a project, a migration) in plain Markdown on your machine. The agent reads it at the start of each session and updates it as it works, so the next session continues where the last one stopped.
 
 - Tickets with dependencies, direction decisions and a dated log.
 - Actions: tasks for you that the agent cannot or should not do, such as a follow-up with a coworker.
 - Hooks log your commits and pull PR state from GitHub.
 - A live page in the browser shows the work under way and whose move each ticket waits on.
+
+<img width="2424" height="3246" alt="demo-notification-prefs" src="https://github.com/user-attachments/assets/14519bf1-8e15-4c64-b19e-d05916b81ebe" />
+
 
 ## Usage
 
