@@ -8,9 +8,10 @@ from pathlib import Path
 from statistics import median
 
 from .markdown import section, strip_comments
-from .model import (BIN, ISOLATION_RULE, KINDS, LOG_LINE, OPEN_STAGES, README_INSTRUCTIONS, SCALES, SPANS,
-    STAGES, STALE_ACTION_DAYS, STEP_MESSAGE, TEXT_MAX, cut, days_since, due_date, link_lines, logged_decision,
-    resolution, sequence, short, show_value, span, stage_of, utc_seconds, whose_move, Dep, Record, Start, Tracker)
+from .model import (BIN, FACTS, ISOLATION_RULE, KINDS, LOG_LINE, OPEN_STAGES, README_INSTRUCTIONS, SCALES, SPANS,
+    STAGES, STALE_ACTION_DAYS, STEP_MESSAGE, TEXT_FACTS, TEXT_MAX, cut, days_since, due_date, link_lines,
+    logged_decision, resolution, sequence, short, show_value, span, stage_of, utc_seconds, whose_move, Dep, Record,
+    Start, Tracker)
 from .git import cwd_repo
 from .session import ago, branch_handoff, handoff_line, lag, Match
 from .contract import check
@@ -102,6 +103,11 @@ def gate(tr: Tracker, t: Record) -> str:
     """`[waits on T-5, D-10] `, `[stacks on T-4] ` (it waits only on work under way) or `[ready] ` (Tracker.gate)."""
     g = tr.gate(t)
     return f"[{g.text()}] " if g.state else ""
+
+
+def levels_text(t: Record) -> str:
+    """A ticket's levels on SCALES, by name: `priority P1 · size M`; "" for none."""
+    return " · ".join(f"{k} {show_value(k, t.get(k))}" for k in SCALES if t.get(k))
 
 
 def start_text(tr: Tracker, s: Start) -> str:
@@ -205,15 +211,17 @@ def recent_log(tr: Tracker, rec: Record, n: int, width: int = 0, shown: set[str]
 
 
 def ticket_lines(tr: Tracker, rec: Record, handoff: bool = True, width: int = 0) -> list[str]:
-    """A ticket's own facts: its line, branch, repo, due day, next action or summary, move, handoff, dependencies and
-    links."""
+    """A ticket's own facts: its line, its TEXT_FACTS (branch, repo, priority, size, due day), next action or summary,
+    move, handoff, dependencies and links."""
     head = [rec.id, rec.get("title"), rec.get("group") and f"group {rec.get('group')}", rec.stage,
             f"PR {pr_label(rec)}"]
     out = [" · ".join(str(x) for x in head if x)]
     closed = rec.closed
-    for k in ("branch", "repo", "due", "summary" if closed else "next"):
-        if rec.get(k):
-            out.append(f"{k}: {show_value(k, rec.get(k))}")
+    facts = [f"{k}: {show_value(k, rec.get(k))}" for k in FACTS if k in TEXT_FACTS and rec.get(k)]
+    out += [" · ".join(facts)] if facts else []
+    k = "summary" if closed else "next"
+    if rec.get(k):
+        out.append(f"{k}: {rec.get(k)}")
     move = whose_move(tr, rec)
     if move:
         out.append(f"move: {move.text(' — ')}")

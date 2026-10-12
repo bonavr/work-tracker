@@ -2153,6 +2153,15 @@ class Values(unittest.TestCase):
         run(*self.t, "set", "T-1", "size=")
         self.assertIsNone(model.weight(self.tr().lookup("T-1"), "size"))
 
+    def test_the_views_show_the_levels_and_ready_puts_the_urgent_first(self):
+        run(*self.t, "new", "T-2", "--title", "Two", "--priority", "1", "--size", "3")
+        run(*self.t, "new", "T-3", "--title", "Three", "--priority", "3")
+        self.assertIn("priority: P1 · size: M", run(*self.t, "context", "T-2"))
+        ready = run(*self.t, "ready").splitlines()
+        self.assertEqual([x.split()[0] for x in ready], ["T-2", "T-3", "T-1"])  # no priority: last
+        self.assertIn("· priority P1 · size M", ready[0])
+        self.assertIn("<dt>priority</dt><dd>P1</dd>", viewer.main_html(self.tr()))
+
     def test_every_kind_reads_one_lifecycle(self):
         self.assertEqual(model.STATUSES["ticket"], ("todo", "in-progress", "done", "dropped"))  # the PR adds the rest
         run(*self.t, "act", "Ask Sam")

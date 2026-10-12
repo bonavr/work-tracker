@@ -28,7 +28,7 @@ Talk to the agent. It runs the `tracker` CLI for you.
 |---|---|
 | `tracker list` | all trackers (`--archived`: the archived ones too) |
 | `tracker index --active` | the tickets under way, whose move each waits on, the open decisions; under the headline, the wait and cycle time lines |
-| `tracker ready` | what can start now, and from which branch |
+| `tracker ready` | what can start now, the most urgent first, and from which branch |
 | `tracker context <id>` | one ticket or decision in full, with what it builds on |
 | `tracker decisions --all` | the decisions, open and settled |
 | `tracker actions` | your open actions (`--all`: the closed ones too) |

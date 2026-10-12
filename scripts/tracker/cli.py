@@ -22,12 +22,12 @@ from .model import (BLOCKER, DEFAULT_LABELS, EVIDENCE, EVIDENCE_DIR, HOME, ISSUE
     same_repo, sequence, set_branch, short, sort_key, spawn, stage_of, today, unblocked, unknown_dep, utc_now, Busy,
     Record, Tracker)
 from .git import branch_of, contains, default_branches, worktree_key
-from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_session, find_tracker, in_repos,
-    locate, mark_up_to_date, match_cwd, no_tracker, on_branch, own_change, record_commits, remember, resolve,
-    save_session, session_id, session_tracker, tracker_at, trackers_for_repo, watch, work_dir)
+from .session import (DECLINE_S, NO_TRACKERS, branch_matches, decline, drop_session, find_tracker, in_repos, locate,
+    mark_up_to_date, match_cwd, no_tracker, on_branch, own_change, record_commits, remember, resolve, save_session,
+    session_id, session_tracker, tracker_at, trackers_for_repo, watch, work_dir)
 from .contract import check, migrate, rules_lines
 from .views import (CHAIN_CARRY_FORWARD_MAX, CONTEXT_LOG, HISTORY_LAST, ISSUE_HOW, brief, context_lines, dep_lines,
-    history_lines, index_lines, order_lines, span_lines, start_text)
+    history_lines, index_lines, levels_text, order_lines, span_lines, start_text)
 from .github import match_pr, sync
 from .watcher import (REFUSED, Refused, Watcher, agent_session, archive_tracker, delete_tracker, granted, session_name,
     unarchive_tracker, watching)
@@ -407,14 +407,15 @@ def cmd_seq(args):
 
 
 def cmd_ready(args):
-    """The todo tickets that can start now: from the default branch, or stacked on work under way (START_RULE), with
-    what each unblocks."""
+    """The todo tickets that can start now, the most urgent first: from the default branch, or stacked on work under
+    way (START_RULE), with their levels and what each unblocks."""
     tr = resolve(args)
     starts = tr.startable()
     for t, s in starts:
         later = ", ".join(o.id for o in tr.waiting_on(t.id))
-        print(f"{t.id}  {t.get('group') or '—'}  {t.get('title')}" + (f" — {start_text(tr, s)}" if s.stacked else "")
-              + (f" · unblocks {later}" if later else ""))
+        print(" · ".join(x for x in (f"{t.id}  {t.get('group') or '—'}  {t.get('title')}"
+                                     + (f" — {start_text(tr, s)}" if s.stacked else ""), levels_text(t),
+                                     f"unblocks {later}" if later else "") if x))
     if not starts:
         print("nothing can start now")
 
@@ -1256,9 +1257,9 @@ def build_parser():
                                    f"`- {BLOCKER}:` line to ## Links")
     sp = add("seq", cmd_seq, "the order: step, waits on and unblocks per ticket; ready list; critical path")
     sp.add_argument("--active", action="store_true", help="hide closed tickets")
-    add("ready", cmd_ready, "the todo tickets that can start now: nothing blocks them (from the default branch), or "
-                            "they wait only on tickets under way and stack on the branch named; with what each "
-                            "unblocks")
+    add("ready", cmd_ready, "the todo tickets that can start now, the most urgent first: nothing blocks them (from "
+                            "the default branch), or they wait only on tickets under way and stack on the branch "
+                            "named; with their priority and size and what each unblocks")
     add("check", cmd_check, "validate the tracker; exit 1 on errors")
     sp = add("migrate", cmd_migrate, "bring a tracker made by an older version to the current rules "
                                      "(backs it up to $TRACKER_HOME/.backups first)")

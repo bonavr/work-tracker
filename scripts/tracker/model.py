@@ -384,6 +384,14 @@ def show_value(key: str, value) -> str:
     return FORMS[value_form(key)].show(key, value) if value not in ("", None) else ""
 
 
+# A record's facts as its views show them, in this order, each by its form (show_value): the viewer's opened record all
+# of them; `tracker context` and the brief, on one line, those in TEXT_FACTS (their first line holds the group and the
+# PR). A new key, a new scale's too, shows once it is here.
+FACTS = ("branch", "base", "repo", "group", "owner", *SCALES, "due", "created_at", "started_at", "merged_at",
+         "closed_at", "updated_at")
+TEXT_FACTS = {"branch", "repo", *SCALES, "due"}
+
+
 def utc_now() -> str:
     return time.strftime(TIME_FORMAT, time.gmtime())
 
@@ -1180,8 +1188,11 @@ class Tracker:
         return Start(base, [] if base else under)
 
     def startable(self) -> list[tuple[Record, Start]]:
-        """The todo tickets that can start now, each with where it starts."""
-        return [(t, s) for t in self.tickets if (s := self.start_point(t))]
+        """The todo tickets that can start now, each with where it starts: the most urgent first, then by id."""
+        def urgency(ts: tuple[Record, Start]) -> tuple[bool, int]:
+            p = level(ts[0], "priority")
+            return p is None, p or 0
+        return sorted(((t, s) for t in self.tickets if (s := self.start_point(t))), key=urgency)
 
     def waiting_on(self, ident: str) -> list[Record]:
         """The tickets whose depends_on names this ticket, decision or action."""

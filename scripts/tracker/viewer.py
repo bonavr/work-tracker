@@ -19,8 +19,8 @@ import time
 from typing import Callable, NamedTuple
 
 from .markdown import headings, section_block, strip_comments, without_section, Link
-from .model import (CLI, EVIDENCE_DIR, HOME, PACKAGE, PYTHON, README_SECTIONS, ROOT, SCALES, SPANS, STAGES, WINDOWS,
-    all_trackers, archived_at, archived_trackers, atomic_write, branch_entry, close_action, day_text, due_date,
+from .model import (CLI, EVIDENCE_DIR, FACTS, HOME, PACKAGE, PYTHON, README_SECTIONS, ROOT, SCALES, SPANS, STAGES,
+    WINDOWS, all_trackers, archived_at, archived_trackers, atomic_write, branch_entry, close_action, day_text, due_date,
     files_hash, level, level_name, locked, sequence, show_value, sort_key, span, spawn, tracker_at, whose_move, Busy,
     Dep, Move, Record, Tracker)
 from .session import ago, live_by_tracker, live_sessions, match_cwd, Live
@@ -281,8 +281,7 @@ def body_html(tr: Tracker, r: Record, lead: list[tuple[str, Html]] | None = None
             toned("closed", ref(d.id) + " ✓") if d.closed else toned("blocked", ref(d.id))
             for d in tr.decisions_for(r))))
     facts = []
-    for k in ("branch", "base", "repo", "group", "owner", "due", "created_at", "started_at", "merged_at", "closed_at",
-              "updated_at"):
+    for k in FACTS:
         if r.get(k):
             value = show_value(k, r.get(k))
             facts.append((k.removesuffix("_at"),
