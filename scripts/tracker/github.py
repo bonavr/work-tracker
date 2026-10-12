@@ -156,6 +156,14 @@ def pr_of(pr: dict) -> dict:
             "merged_at": FORMS["time"].read("merged_at", pr["mergedAt"]) if pr.get("mergedAt") else ""}
 
 
+SKIPPED = "sync skipped"  # the start of the one change line of a sync that read nothing
+
+
+def skipped(changes: list[str]) -> bool:
+    """A sync's change lines say it read nothing: gh failed (`sync`), or the sync raised (its caller's line)."""
+    return bool(changes) and changes[0].startswith(SKIPPED)
+
+
 def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) -> list[str]:
     """Pull PR state from GitHub: each ticket's PR into its frontmatter (`pr`, `pr_state`, `base`, `merged_at`), the
     open PRs' PR_FACTS into .state.json `prs` (`model.apply_prs`). Returns change lines. GitHub is asked first, in
@@ -172,7 +180,7 @@ def sync(tr: Tracker, force: bool, min_interval: float = SYNC_MIN_INTERVAL_S) ->
     failed = (sorted({tr.repo_of(t) for t in tickets}) if prs_by_repo is None
               else [repo for repo, prs in prs_by_repo.items() if prs is None])
     if failed:
-        return [f"sync skipped: gh failed or timed out for {', '.join(failed)}"]
+        return [f"{SKIPPED}: gh failed or timed out for {', '.join(failed)}"]
     found, facts = {}, {}
     for t in tickets:
         repo = tr.repo_of(t)

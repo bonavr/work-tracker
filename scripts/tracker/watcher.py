@@ -19,7 +19,7 @@ from .session import (SESSIONS_DIR, drop_session, live_sessions, load_session, m
     ticket_facts, Live)
 from .contract import check
 from .views import start_text
-from .github import budget, sync
+from .github import SKIPPED, budget, skipped, sync
 
 WATCH_DIR = HOME / ".watch"  # <slug>.json: a tracker's watcher and what it reported; grants/<session id>
 GRANTS = WATCH_DIR / "grants"
@@ -326,11 +326,11 @@ class Watcher:
         try:
             changes = sync(tr, force=False, min_interval=LIVE_SYNC_S)
         except (Exception, SystemExit) as exc:  # a busy lock, a bad file: try again next time
-            changes = [f"sync skipped: {exc}"]
+            changes = [f"{SKIPPED}: {exc}"]
         finally:
             budget(None)
         failed = self.st.get("sync_failed", 0)
-        if changes and changes[0].startswith("sync skipped"):
+        if skipped(changes):
             if failed:
                 return []
             self.st["sync_failed"] = now

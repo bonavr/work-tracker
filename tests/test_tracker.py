@@ -194,6 +194,20 @@ class Format(unittest.TestCase):
             github.budget(None)
         run_gh.assert_not_called()
 
+    def test_viewer_sync_waits_after_a_failure(self):
+        s = slug()
+        run("init", s, "--title", "Offline", "--owner", "me", "--repo", "a/x")
+        run("--tracker", s, "new", "S-1", "--title", "Started", "--branch", "f1")
+        run("--tracker", s, "set", "S-1", "status=in-progress")
+        calls, failed = [], {}
+        with mock.patch.object(github, "gh", lambda *args, **kw: calls.append(args)):  # None: gh failed
+            for _ in range(3):  # the syncer's rounds, 10 s apart
+                viewer.sync_viewed({s: time.monotonic()}, failed)
+            self.assertEqual(len(calls), 1)
+            failed[s] -= model.LIVE_SYNC_S  # LIVE_SYNC_S later: gh is asked again
+            viewer.sync_viewed({s: time.monotonic()}, failed)
+            self.assertEqual(len(calls), 2)
+
 
 def ticket(root: Path, ident: str, **meta) -> None:
     meta = {"id": ident, "title": ident, "status": "todo", **meta}

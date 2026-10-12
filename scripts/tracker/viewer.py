@@ -27,7 +27,7 @@ from .system import CLI, PACKAGE, PYTHON, WINDOWS, spawn
 from .session import ago, handoff_where, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
 from .views import dep_facts, duration, pr_label, span_lines, stage_counts
-from .github import sync
+from .github import SKIPPED, skipped, sync
 from .watcher import archive_tracker, delete_tracker, in_use, unarchive_tracker, watcher_of, Refused
 
 # ---------------------------------------------------------------- render
@@ -753,6 +753,7 @@ REFRESH_SYNC_S = 15  # a Refresh syncs GitHub unless a sync ran this recently
 # Only same-origin scripts run: no inline script or handler, if tracker text gets past Html's escaping.
 PAGE_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline'"
 RESTART_WAIT_S = 10  # how long `open` waits for a viewer on this code to restart onto a new version of it
+VIEWED_S = 60  # a tracker a page asked for this recently is open: the syncer keeps it current
 
 
 def viewer_ping() -> tuple[int, str, int] | None:
@@ -820,6 +821,25 @@ def code_ready() -> bool:
     if not ok:
         _refused = new
     return ok
+
+
+def sync_viewed(viewed: dict[str, float], failed: dict[str, float]) -> None:
+    """One round of the viewer's syncer: pull PR state for each tracker an open page shows (`viewed`: when a page last
+    asked for it, by slug), at most every LIVE_SYNC_S. A sync that read nothing (gh missing, offline or rate-limited;
+    a busy lock) is tried again LIVE_SYNC_S later, not each round: `failed` keeps when it failed, by slug."""
+    now = time.monotonic()
+    for slug, seen in list(viewed.items()):
+        tr = tracker_at(slug) if now - seen < VIEWED_S else None
+        if not tr or slug in failed and now - failed[slug] < LIVE_SYNC_S:
+            continue
+        try:
+            changes = sync(tr, force=False, min_interval=LIVE_SYNC_S)
+        except (Exception, SystemExit) as exc:  # a bad file, a busy lock
+            changes = [f"{SKIPPED}: {exc}"]
+        if skipped(changes):
+            failed[slug] = now
+        else:
+            failed.pop(slug, None)
 
 
 def serve(port: int = 0) -> None:
@@ -994,15 +1014,10 @@ def serve(port: int = 0) -> None:
 
     def syncer():
         """Pull PR state from GitHub for the trackers that open pages show, so their stages stay current."""
+        failed: dict[str, float] = {}
         while True:
             time.sleep(10)
-            for slug, seen in list(server.viewed.items()):
-                tr = tracker_at(slug) if time.monotonic() - seen < 60 else None
-                if tr:
-                    try:
-                        sync(tr, force=False, min_interval=LIVE_SYNC_S)
-                    except (Exception, SystemExit):  # gh missing, a bad file, a busy lock: try again next round
-                        pass
+            sync_viewed(server.viewed, failed)
 
     threading.Thread(target=watchdog, daemon=True).start()
     threading.Thread(target=syncer, daemon=True).start()
