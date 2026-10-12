@@ -767,6 +767,8 @@ class Writes(unittest.TestCase):
 
 
     def test_writes_log_what_history_needs(self):
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(BASE)  # on no git branch: the checkout's own branch would be recorded on the ticket it starts
         s = slug()
         t = ("--tracker", s)
         run("init", s, "--title", "Logs", "--owner", "me")
