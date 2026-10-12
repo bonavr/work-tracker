@@ -12,8 +12,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .model import (HOME, SAFE_NAME, STAGES, WINDOWS, all_trackers, append_log, archived_at, atomic_write,
-    branch_entry, commits_text, die, locked, put_entry, resolution, short, stage_of, state_key, tracker_at, whose_move,
+from .model import (HOME, SAFE_NAME, STAGES, WINDOWS, all_trackers, append_log, archived_at, read_json, branch_entry,
+    commits_text, die, locked, put_entry, resolution, short, stage_of, state_key, tracker_at, whose_move, write_json,
     Record, Tracker)
 from .git import branch_of, changed_files, cwd_repo, default_branches, git, head_of, worktree, worktree_key
 
@@ -98,10 +98,8 @@ def session_path(sid: str) -> Path | None:
 
 
 def load_session(sid: str) -> dict:
-    try:
-        return json.loads(session_path(sid).read_text())
-    except (OSError, ValueError, AttributeError):
-        return {}
+    path = session_path(sid)
+    return read_json(path) if path else {}
 
 
 def save_session(sid: str, **fields) -> None:
@@ -112,7 +110,7 @@ def save_session(sid: str, **fields) -> None:
     with locked():
         entry = {**load_session(sid), **fields}
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-        atomic_write(path, json.dumps({k: v for k, v in entry.items() if v is not None}, indent=1))
+        write_json(path, {k: v for k, v in entry.items() if v is not None})
         old = sorted(SESSIONS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)[:-SESSIONS_MAX]
         for f in old:
             f.unlink(missing_ok=True)
@@ -131,23 +129,17 @@ DECLINE_S = 86400
 
 
 def declined(cwd: str | Path) -> bool:
-    try:
-        at = json.loads(DECLINED_FILE.read_text()).get(state_key(cwd_repo(cwd), branch_of(cwd)), 0)
-    except (OSError, ValueError, AttributeError):
-        return False
-    return time.time() - at < DECLINE_S
+    at = read_json(DECLINED_FILE).get(state_key(cwd_repo(cwd), branch_of(cwd)), 0)
+    return isinstance(at, (int, float)) and time.time() - at < DECLINE_S
 
 
 def decline(cwd: str | Path) -> None:
     with locked():
-        try:
-            old = json.loads(DECLINED_FILE.read_text())
-        except (OSError, ValueError):
-            old = {}
         now = time.time()
+        old = read_json(DECLINED_FILE)
         keep = {k: v for k, v in old.items() if isinstance(v, (int, float)) and now - v < DECLINE_S}
         keep[state_key(cwd_repo(cwd), branch_of(cwd))] = int(now)
-        atomic_write(DECLINED_FILE, json.dumps(keep, indent=1))
+        write_json(DECLINED_FILE, keep)
 
 
 # `/clear` ends a session and starts a new one in the same directory. The session's end (reason "clear") leaves its
@@ -159,16 +151,13 @@ CLEAR_HANDOVER_S = 60
 
 
 def cleared_entries(now: float) -> dict:
-    try:
-        old = json.loads(CLEARED_FILE.read_text())
-    except (OSError, ValueError):
-        return {}
-    return {k: v for k, v in old.items() if isinstance(v, dict) and now - v.get("at", 0) < CLEAR_HANDOVER_S}
+    return {k: v for k, v in read_json(CLEARED_FILE).items()
+            if isinstance(v, dict) and now - v.get("at", 0) < CLEAR_HANDOVER_S}
 
 
 def save_cleared(entries: dict) -> None:
     if entries:
-        atomic_write(CLEARED_FILE, json.dumps(entries, indent=1))
+        write_json(CLEARED_FILE, entries)
     else:
         CLEARED_FILE.unlink(missing_ok=True)
 
@@ -629,6 +618,11 @@ CLAUDE_SESSIONS = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".cl
 ACTIVITY_MAX_AGE_S = 86400
 
 
+def claude_sessions() -> list[dict]:
+    """The files of the running Claude Code processes (CLAUDE_SESSIONS), each as its object."""
+    return [c for c in map(read_json, CLAUDE_SESSIONS.glob("*.json")) if c]
+
+
 def session_activity(sid: str, status: str) -> None:
     """Keep a tracked session's status from its hooks, and when the status last changed."""
     entry = load_session(sid)
@@ -695,11 +689,10 @@ def live_by_tracker(slugs: set[str] | None = None) -> dict[str, list[Live]]:
         out.setdefault(entry["tracker"], {})[sid] = Live(
             sid, name, status, cwd, branch_of(cwd) if cwd and Path(cwd).is_dir() else "", entry.get("focus", []), since)
 
-    for f in CLAUDE_SESSIONS.glob("*.json"):
+    for c in claude_sessions():
         try:
-            c = json.loads(f.read_text())
             sid, pid, since = str(c["sessionId"]), int(c["pid"]), float(c.get("statusUpdatedAt") or 0) / 1000
-        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        except (ValueError, KeyError, TypeError):
             continue
         native.add(sid)
         entry = load_session(sid)

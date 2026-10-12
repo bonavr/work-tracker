@@ -20,9 +20,9 @@ from typing import Callable, NamedTuple
 
 from .markdown import headings, section_block, strip_comments, without_section, Link
 from .model import (CLI, EVIDENCE_DIR, FACTS, HOME, PACKAGE, PYTHON, README_SECTIONS, ROOT, SCALES, SPANS, STAGES,
-    WINDOWS, all_trackers, archived_at, archived_trackers, atomic_write, branch_entry, close_action, day_text, due_date,
-    files_hash, level, level_name, locked, sequence, show_value, sort_key, span, spawn, tracker_at, whose_move, Busy,
-    Dep, Move, Record, Tracker)
+    WINDOWS, all_trackers, archived_at, archived_trackers, branch_entry, close_action, day_text, due_date, files_hash,
+    level, level_name, locked, sequence, show_value, sort_key, span, spawn, tracker_at, whose_move, read_json,
+    write_json, Busy, Dep, Move, Record, Tracker)
 from .session import ago, live_by_tracker, live_sessions, match_cwd, Live
 from .contract import check
 from .views import dep_facts, duration, pr_label, span_lines, stage_counts
@@ -762,7 +762,7 @@ def viewer_ping() -> tuple[int, str, int] | None:
     """(port, ping answer, pid) of the viewer named in VIEWER_FILE, if it answers."""
     import urllib.request
     try:
-        info = json.loads(VIEWER_FILE.read_text())
+        info = read_json(VIEWER_FILE)
         port = int(info["port"])
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/ping", timeout=1) as r:
             return port, r.read().decode(), int(info["pid"])
@@ -777,7 +777,7 @@ def keep_viewer() -> None:
     if not VIEWER_PORT:
         return
     try:
-        socket.create_connection(("127.0.0.1", int(json.loads(VIEWER_FILE.read_text())["port"])), timeout=0.5).close()
+        socket.create_connection(("127.0.0.1", int(read_json(VIEWER_FILE)["port"])), timeout=0.5).close()
     except (OSError, ValueError, KeyError, TypeError):
         spawn("serve", "--port", str(VIEWER_PORT))
 
@@ -975,7 +975,7 @@ def serve(port: int = 0) -> None:
     server.last_seen = time.monotonic()
     server.viewed = {}  # slug -> when a page last asked for it
     server.restart = False
-    atomic_write(VIEWER_FILE, json.dumps({"port": server.server_address[1], "pid": os.getpid()}))
+    write_json(VIEWER_FILE, {"port": server.server_address[1], "pid": os.getpid()})
 
     def needed() -> bool:
         """A page asked lately, or an agent session is on a tracker: its user can open a page at any time."""
@@ -1018,8 +1018,5 @@ def serve(port: int = 0) -> None:
             if not WINDOWS:
                 os.execv(sys.executable, [*CLI, "serve", "--port", port])
             spawn("serve", "--port", port)  # Windows has no exec: start the new viewer, and this one ends
-        try:
-            if json.loads(VIEWER_FILE.read_text()).get("pid") == os.getpid():
-                VIEWER_FILE.unlink()
-        except (OSError, ValueError):
-            pass
+        if read_json(VIEWER_FILE).get("pid") == os.getpid():
+            VIEWER_FILE.unlink(missing_ok=True)

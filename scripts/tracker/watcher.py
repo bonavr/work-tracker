@@ -6,16 +6,15 @@ tracker."""
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import sys
 import time
 from pathlib import Path
 
-from .model import (ARCHIVE, HOME, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, atomic_write, commits_logged, die,
-    files_hash, locked, short, to_trash, Tracker)
-from .session import (CLAUDE_SESSIONS, SESSIONS_DIR, alive, drop_session, live_sessions, load_session, match_cwd,
+from .model import (ARCHIVE, HOME, LOG, LOG_LINE, SAFE_NAME, STATE_KEEP_DAYS, read_json, commits_logged, die,
+    files_hash, locked, short, to_trash, write_json, Tracker)
+from .session import (SESSIONS_DIR, alive, drop_session, live_sessions, load_session, match_cwd, claude_sessions,
     session_id, ticket_facts, Live)
 from .contract import check
 from .views import start_text
@@ -84,14 +83,7 @@ def watching() -> bool:
 
 def session_name(sid: str) -> str:
     """A session's name when the host supplies it; else the start of its id."""
-    for f in CLAUDE_SESSIONS.glob("*.json"):
-        try:
-            c = json.loads(f.read_text())
-        except (OSError, ValueError):
-            continue
-        if isinstance(c, dict) and str(c.get("sessionId")) == sid:
-            return str(c.get("name") or sid[:8])
-    return sid[:8]
+    return next((str(c.get("name") or sid[:8]) for c in claude_sessions() if str(c.get("sessionId")) == sid), sid[:8])
 
 
 # ---------------------------------------------------------------- what changed
@@ -228,11 +220,7 @@ def state_path(slug: str) -> Path:
 
 
 def load_state(slug: str) -> dict:
-    try:
-        st = json.loads(state_path(slug).read_text())
-    except (OSError, ValueError):
-        return {}
-    return st if isinstance(st, dict) else {}
+    return read_json(state_path(slug))
 
 
 def watcher_of(tr: Tracker) -> dict:
@@ -267,7 +255,7 @@ class Watcher:
 
     def save(self, now: float) -> None:
         WATCH_DIR.mkdir(parents=True, exist_ok=True)
-        atomic_write(state_path(self.slug), json.dumps({**self.st, "at": now}, indent=1))
+        write_json(state_path(self.slug), {**self.st, "at": now})
 
     def claim(self, now: float) -> list[str]:
         """Take the tracker's watch. Soon after this watcher stopped (same session, or the terminal): what changed
@@ -279,7 +267,7 @@ class Watcher:
                 die(f"{self.slug} is watched already, by {st.get('who')} (pid {pid}): one watcher per tracker",
                     REFUSED)
             WATCH_DIR.mkdir(parents=True, exist_ok=True)
-            atomic_write(state_path(self.slug), json.dumps({**st, "pid": os.getpid()}, indent=1))
+            write_json(state_path(self.slug), {**st, "pid": os.getpid()})
         again = st.get("sid", "") == self.sid and now - st.get("at", 0) < CATCH_UP_S and "snapshot" in st
         if again:
             self.st = st

@@ -901,6 +901,20 @@ def atomic_write(path: Path, text: str) -> None:
         f.write(text.encode("utf-8"))
 
 
+def read_json(path: Path) -> dict:
+    """A JSON file's object: the machine state, a session's, a watch's. {} when the file is missing, is not JSON or
+    holds no object: one bad file never stops a command or a hook."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_json(path: Path, data: dict, indent: int = 1) -> None:
+    atomic_write(path, json.dumps(data, indent=indent) + "\n")
+
+
 def create(path: Path, text: str) -> None:
     """Write a new file; refuse one that exists, even one another session made a moment ago."""
     global _writes
@@ -1230,11 +1244,7 @@ class Tracker:
     # -- machine state (.state.json): see STATE_RULES. state() drops what no longer applies, so a write of what it
     # read keeps the file current; raw_state() is the file as it is.
     def raw_state(self) -> dict:
-        try:
-            state = json.loads((self.root / ".state.json").read_text())
-        except (OSError, ValueError):
-            return {}
-        return state if isinstance(state, dict) else {}
+        return read_json(self.root / ".state.json")
 
     def state(self) -> dict:
         state, now = self.raw_state(), time.time()
@@ -1267,7 +1277,7 @@ class Tracker:
             or not read.get(t.id) and t.get("started_at"))]  # closed: once, for its wait time, if it has a start
 
     def save_state(self, state: dict) -> None:
-        atomic_write(self.root / ".state.json", json.dumps(state, indent=2) + "\n")
+        write_json(self.root / ".state.json", state, indent=2)
 
     def data_files(self) -> list[Path]:
         """Every file that holds the tracker's facts: a change to one is a change the viewer and the watcher show."""
