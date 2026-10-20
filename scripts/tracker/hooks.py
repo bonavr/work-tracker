@@ -17,7 +17,7 @@ from .git import cwd_repo, default_branches
 from .session import (behind, branch_matches, changes_since, declined, drop_session, get_mark, hand_over, in_repos,
     inside_home, lag, load_session, match_cwd, own_edit, record_commits, remember, save_session, session_activity,
     take_over, watch, work_dir, Lag, Match)
-from .views import brief, issue_request, issue_update_request
+from .views import brief, issue_request, issue_update_request, updates_told
 from .github import PR_COMMAND, budget, match_pr, sync
 from .watcher import granted, set_grant
 
@@ -138,11 +138,6 @@ def hook_session_start(data: dict) -> None:
         save_session(sid, told_updates=updates_told(m.tracker))  # the brief lists them: no prompt repeats it
     note = "\n\n".join(x for x in (note, found) if x)
     emit_context("SessionStart", brief(m, cwd, changes, note, compact=source == "compact"), notice)
-
-
-def updates_told(tr: Tracker) -> list[str]:
-    """The issue updates due, as a session remembers having been told them: a new one is told again."""
-    return sorted(f"{t.id}: {x}" for t, items in tr.issue_updates_due() for x in items)
 
 
 def hook_session_end(data: dict) -> None:
@@ -298,7 +293,8 @@ def watch_request(data: dict) -> bool:
 
 def hook_prompt(data: dict) -> None:
     """On tracked work, each user message gets what other sessions or GitHub changed since its last message (or its
-    brief), and `next_request` when commits (a subagent's too) passed `next`; the first message and every
+    brief), `next_request` when commits (a subagent's too) passed `next`, the issue fields a Refresh asked for and an
+    issue update newly due (updates_told), each once; the first message and every
     NUDGE_EVERY-th after it get the state line, so it stays a reminder, not noise. Work since the branch's mark with
     no ticket in progress brings the state line at once, once per mark. A stale GitHub sync starts in the background
     (`refresh`)."""
@@ -328,7 +324,7 @@ def hook_prompt(data: dict) -> None:
         fields["told_issues"] = asked
         lines += [x for x in [issue_request(m.tracker, m.focus)] if x]
     updates = updates_told(m.tracker)
-    if updates and updates != entry.get("told_updates"):  # the issue updates due: passed on once per change
+    if set(updates) - set(entry.get("told_updates") or []):  # a new issue update due: passed on once
         lines.append(issue_update_request(m.tracker, m.focus))
     fields["told_updates"] = updates
     idle = not m.active and bool(m.branch) and in_repos(m.tracker, cwd)
